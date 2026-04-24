@@ -3,4 +3,5 @@ import { AppLayout } from "@/components/AppLayout";
 
 export const Route = createFileRoute("/_app")({
   component: AppLayout,
+  // Pathless layout — does not contribute a URL segment
 });
