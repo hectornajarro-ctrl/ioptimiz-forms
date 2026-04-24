@@ -1,0 +1,4 @@
+project_id = "tykosvdpsfetnmqobkhs"
+
+[functions.extract-survey]
+verify_jwt = true
