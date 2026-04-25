@@ -35,7 +35,7 @@ export function AppLayout() {
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, show: true },
     { to: "/admin/users", label: "Users", icon: Users, show: hasRole("admin") },
     { to: "/admin/groups", label: "Audit Groups", icon: FolderKanban, show: hasRole("admin") },
-    { to: "/surveys", label: "My Surveys", icon: FileText, show: hasRole("lead_auditor") },
+    { to: "/surveys", label: "My Surveys", icon: FileText, show: hasRole("lead_auditor") || hasRole("admin") },
     { to: "/assigned", label: "Assigned Audits", icon: ClipboardList, show: hasRole("member_auditor") },
   ];
 

@@ -27,7 +27,9 @@ function Surveys() {
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && !hasRole("lead_auditor")) navigate({ to: "/dashboard" });
+    if (!authLoading && !hasRole("lead_auditor") && !hasRole("admin")) {
+      navigate({ to: "/dashboard" });
+    }
   }, [authLoading, hasRole, navigate]);
 
   const load = async () => {
