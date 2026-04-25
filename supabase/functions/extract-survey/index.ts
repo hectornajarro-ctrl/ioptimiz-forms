@@ -88,7 +88,16 @@ serve(async (req) => {
       .eq("id", surveyId)
       .single();
     if (sErr || !survey) throw new Error("Survey not found");
-    if (survey.lead_auditor_id !== userId) throw new Error("Forbidden");
+    // Allow if owner OR admin
+    if (survey.lead_auditor_id !== userId) {
+      const { data: roleRow } = await admin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .eq("role", "admin")
+        .maybeSingle();
+      if (!roleRow) throw new Error("Forbidden");
+    }
     if (!survey.pdf_path) throw new Error("No PDF uploaded");
 
     // Download PDF
