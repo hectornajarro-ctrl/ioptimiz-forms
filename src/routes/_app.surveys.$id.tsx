@@ -58,7 +58,7 @@ function uid() { return Math.random().toString(36).slice(2, 10); }
 
 function SurveyEditor() {
   const { id } = Route.useParams();
-  const { user, session } = useAuth();
+  const { user, session, hasRole } = useAuth();
   const navigate = useNavigate();
   const [survey, setSurvey] = useState<SurveyRow | null>(null);
   const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
@@ -76,17 +76,22 @@ function SurveyEditor() {
     const sch = (data.schema as any) ?? { sections: [] };
     setSurvey({ ...data, schema: { sections: sch.sections ?? [] } } as SurveyRow);
 
-    const { data: g } = await supabase.from("audit_groups").select("id,name").eq("lead_auditor_id", data.lead_auditor_id);
+    // Admins can assign to ANY group; lead auditors can only assign to groups they lead
+    const groupQuery = hasRole("admin")
+      ? supabase.from("audit_groups").select("id,name").order("name")
+      : supabase.from("audit_groups").select("id,name").eq("lead_auditor_id", data.lead_auditor_id).order("name");
+    const { data: g } = await groupQuery;
     setGroups(g ?? []);
   };
 
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => { if (user) load(); }, [id, user]);
 
   if (!survey) {
     return <div className="p-8 text-muted-foreground">Loading…</div>;
   }
 
-  const isOwner = user?.id === survey.lead_auditor_id;
+  // Admins can edit/manage any survey; lead auditors only their own
+  const isOwner = user?.id === survey.lead_auditor_id || hasRole("admin");
   const isDraft = survey.status === "draft";
 
   const updateField = (patch: Partial<SurveyRow>) => setSurvey({ ...survey, ...patch });
