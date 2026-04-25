@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
@@ -72,6 +72,9 @@ function Surveys() {
   };
 
   return (
+    <>
+      <Outlet />
+      {!Route.useMatch({ from: "/surveys", shouldThrow: false }) ? null : (
     <div className="p-8 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -108,5 +111,7 @@ function Surveys() {
         </div>
       )}
     </div>
+      )}
+    </>
   );
 }
