@@ -28,10 +28,7 @@ function Landing() {
           </div>
           <div className="flex items-center gap-2">
             <Link to="/login">
-              <Button variant="ghost">Sign in</Button>
-            </Link>
-            <Link to="/login" search={{ mode: "signup" }}>
-              <Button>Get started</Button>
+              <Button>Sign in</Button>
             </Link>
           </div>
         </div>
@@ -52,18 +49,12 @@ function Landing() {
             Lead auditors upload surveys, AI converts them into editable forms, and your team
             completes them in parallel — with full visibility into progress.
           </p>
+          <p className="mt-3 text-sm text-primary-foreground/60 max-w-2xl mx-auto">
+            Accounts are provisioned by your System Administrator.
+          </p>
           <div className="mt-10 flex items-center justify-center gap-3">
-            <Link to="/login" search={{ mode: "signup" }}>
-              <Button size="lg" variant="secondary">
-                Create an account
-              </Button>
-            </Link>
             <Link to="/login">
-              <Button
-                size="lg"
-                variant="outline"
-                className="bg-transparent border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
-              >
+              <Button size="lg" variant="secondary">
                 Sign in
               </Button>
             </Link>
