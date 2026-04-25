@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
@@ -60,6 +60,7 @@ function SurveyEditor() {
   const { id } = Route.useParams();
   const { user, session, hasRole } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [survey, setSurvey] = useState<SurveyRow | null>(null);
   const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
   const [extracting, setExtracting] = useState(false);
@@ -85,6 +86,10 @@ function SurveyEditor() {
   };
 
   useEffect(() => { if (user) load(); }, [id, user]);
+
+  if (location.pathname.endsWith("/progress")) {
+    return <Outlet />;
+  }
 
   if (!survey) {
     return <div className="p-8 text-muted-foreground">Loading…</div>;
