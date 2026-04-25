@@ -1,4 +1,4 @@
-import { createFileRoute, Link, Outlet, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
@@ -23,8 +23,10 @@ export const Route = createFileRoute("/_app/surveys")({
 function Surveys() {
   const { user, hasRole, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [rows, setRows] = useState<SurveyRow[]>([]);
   const [creating, setCreating] = useState(false);
+  const isListRoute = location.pathname === "/surveys";
 
   useEffect(() => {
     if (!authLoading && !hasRole("lead_auditor") && !hasRole("admin")) {
@@ -71,10 +73,11 @@ function Surveys() {
     );
   };
 
+  if (!isListRoute) {
+    return <Outlet />;
+  }
+
   return (
-    <>
-      <Outlet />
-      {!Route.useMatch({ from: "/surveys", shouldThrow: false }) ? null : (
     <div className="p-8 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -111,7 +114,5 @@ function Surveys() {
         </div>
       )}
     </div>
-      )}
-    </>
   );
 }
