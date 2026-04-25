@@ -1,6 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { z } from "zod";
 import { ShieldCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,24 +8,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 
-const searchSchema = z.object({
-  mode: z.enum(["signin", "signup"]).optional(),
-});
-
 export const Route = createFileRoute("/login")({
-  validateSearch: (s) => searchSchema.parse(s),
   component: LoginPage,
   head: () => ({ meta: [{ title: "Sign in — AuditFlow" }] }),
 });
 
 function LoginPage() {
-  const search = Route.useSearch();
   const navigate = useNavigate();
   const { user, loading } = useAuth();
-  const [mode, setMode] = useState<"signin" | "signup">(search.mode ?? "signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -37,23 +28,9 @@ function LoginPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: window.location.origin + "/dashboard",
-            data: { full_name: fullName || email },
-          },
-        });
-        if (error) throw error;
-        toast.success("Account created. You can sign in now.");
-        setMode("signin");
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        navigate({ to: "/dashboard" });
-      }
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      navigate({ to: "/dashboard" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Something went wrong";
       toast.error(msg);
@@ -79,27 +56,12 @@ function LoginPage() {
           className="bg-card rounded-xl p-8 border border-border"
           style={{ boxShadow: "var(--shadow-elevated)" }}
         >
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {mode === "signin" ? "Sign in" : "Create your account"}
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {mode === "signin"
-              ? "Welcome back. Enter your credentials to continue."
-              : "Sign up to get started. New accounts default to Member Auditor."}
+            Welcome back. Enter your credentials to continue.
           </p>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
-            {mode === "signup" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="name">Full name</Label>
-                <Input
-                  id="name"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  maxLength={100}
-                />
-              </div>
-            )}
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -124,35 +86,13 @@ function LoginPage() {
               />
             </div>
             <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
+              {submitting ? "Please wait…" : "Sign in"}
             </Button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-muted-foreground">
-            {mode === "signin" ? (
-              <>
-                No account?{" "}
-                <button
-                  type="button"
-                  className="text-primary font-medium hover:underline"
-                  onClick={() => setMode("signup")}
-                >
-                  Sign up
-                </button>
-              </>
-            ) : (
-              <>
-                Already have one?{" "}
-                <button
-                  type="button"
-                  className="text-primary font-medium hover:underline"
-                  onClick={() => setMode("signin")}
-                >
-                  Sign in
-                </button>
-              </>
-            )}
-          </div>
+          <p className="mt-6 text-center text-xs text-muted-foreground">
+            Accounts are provisioned by your System Administrator.
+          </p>
         </div>
       </div>
     </div>
