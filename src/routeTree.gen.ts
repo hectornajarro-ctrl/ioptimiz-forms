@@ -19,6 +19,7 @@ import { Route as AppSurveysIdRouteImport } from './routes/_app.surveys.$id'
 import { Route as AppAssignedIdRouteImport } from './routes/_app.assigned.$id'
 import { Route as AppAdminUsersRouteImport } from './routes/_app.admin.users'
 import { Route as AppAdminGroupsRouteImport } from './routes/_app.admin.groups'
+import { Route as AppAdminActivityRouteImport } from './routes/_app.admin.activity'
 import { Route as AppSurveysIdProgressRouteImport } from './routes/_app.surveys.$id.progress'
 
 const LoginRoute = LoginRouteImport.update({
@@ -70,6 +71,11 @@ const AppAdminGroupsRoute = AppAdminGroupsRouteImport.update({
   path: '/admin/groups',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAdminActivityRoute = AppAdminActivityRouteImport.update({
+  id: '/admin/activity',
+  path: '/admin/activity',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSurveysIdProgressRoute = AppSurveysIdProgressRouteImport.update({
   id: '/progress',
   path: '/progress',
@@ -82,6 +88,7 @@ export interface FileRoutesByFullPath {
   '/assigned': typeof AppAssignedRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
   '/surveys': typeof AppSurveysRouteWithChildren
+  '/admin/activity': typeof AppAdminActivityRoute
   '/admin/groups': typeof AppAdminGroupsRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/assigned/$id': typeof AppAssignedIdRoute
@@ -94,6 +101,7 @@ export interface FileRoutesByTo {
   '/assigned': typeof AppAssignedRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
   '/surveys': typeof AppSurveysRouteWithChildren
+  '/admin/activity': typeof AppAdminActivityRoute
   '/admin/groups': typeof AppAdminGroupsRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/assigned/$id': typeof AppAssignedIdRoute
@@ -108,6 +116,7 @@ export interface FileRoutesById {
   '/_app/assigned': typeof AppAssignedRouteWithChildren
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/surveys': typeof AppSurveysRouteWithChildren
+  '/_app/admin/activity': typeof AppAdminActivityRoute
   '/_app/admin/groups': typeof AppAdminGroupsRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/assigned/$id': typeof AppAssignedIdRoute
@@ -122,6 +131,7 @@ export interface FileRouteTypes {
     | '/assigned'
     | '/dashboard'
     | '/surveys'
+    | '/admin/activity'
     | '/admin/groups'
     | '/admin/users'
     | '/assigned/$id'
@@ -134,6 +144,7 @@ export interface FileRouteTypes {
     | '/assigned'
     | '/dashboard'
     | '/surveys'
+    | '/admin/activity'
     | '/admin/groups'
     | '/admin/users'
     | '/assigned/$id'
@@ -147,6 +158,7 @@ export interface FileRouteTypes {
     | '/_app/assigned'
     | '/_app/dashboard'
     | '/_app/surveys'
+    | '/_app/admin/activity'
     | '/_app/admin/groups'
     | '/_app/admin/users'
     | '/_app/assigned/$id'
@@ -232,6 +244,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminGroupsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/admin/activity': {
+      id: '/_app/admin/activity'
+      path: '/admin/activity'
+      fullPath: '/admin/activity'
+      preLoaderRoute: typeof AppAdminActivityRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/surveys/$id/progress': {
       id: '/_app/surveys/$id/progress'
       path: '/progress'
@@ -282,6 +301,7 @@ interface AppRouteChildren {
   AppAssignedRoute: typeof AppAssignedRouteWithChildren
   AppDashboardRoute: typeof AppDashboardRoute
   AppSurveysRoute: typeof AppSurveysRouteWithChildren
+  AppAdminActivityRoute: typeof AppAdminActivityRoute
   AppAdminGroupsRoute: typeof AppAdminGroupsRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
 }
@@ -290,6 +310,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAssignedRoute: AppAssignedRouteWithChildren,
   AppDashboardRoute: AppDashboardRoute,
   AppSurveysRoute: AppSurveysRouteWithChildren,
+  AppAdminActivityRoute: AppAdminActivityRoute,
   AppAdminGroupsRoute: AppAdminGroupsRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
 }

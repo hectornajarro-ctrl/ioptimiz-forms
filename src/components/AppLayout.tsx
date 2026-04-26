@@ -1,6 +1,6 @@
 import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
-import { ShieldCheck, Users, FolderKanban, FileText, ClipboardList, LogOut, LayoutDashboard } from "lucide-react";
+import { ShieldCheck, Users, FolderKanban, FileText, ClipboardList, LogOut, LayoutDashboard, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
@@ -35,6 +35,7 @@ export function AppLayout() {
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, show: true },
     { to: "/admin/users", label: "Users", icon: Users, show: hasRole("admin") },
     { to: "/admin/groups", label: "Audit Groups", icon: FolderKanban, show: hasRole("admin") },
+    { to: "/admin/activity", label: "Activity Log", icon: History, show: hasRole("admin") },
     { to: "/surveys", label: "My Surveys", icon: FileText, show: hasRole("lead_auditor") || hasRole("admin") },
     { to: "/assigned", label: "Assigned Audits", icon: ClipboardList, show: hasRole("member_auditor") },
   ];
