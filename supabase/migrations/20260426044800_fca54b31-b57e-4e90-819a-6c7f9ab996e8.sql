@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "System inserts audit logs" ON public.audit_logs;
