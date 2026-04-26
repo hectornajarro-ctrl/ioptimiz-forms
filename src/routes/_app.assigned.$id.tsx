@@ -205,6 +205,54 @@ function FillSurvey() {
                     {q.label}
                     {q.required && <span className="text-destructive ml-1">*</span>}
                   </Label>
+                  {isCompliance ? (
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        {[
+                          { v: "Yes", cls: "data-[on=true]:bg-success data-[on=true]:text-white data-[on=true]:border-success" },
+                          { v: "No", cls: "data-[on=true]:bg-destructive data-[on=true]:text-destructive-foreground data-[on=true]:border-destructive" },
+                          { v: "N/A", cls: "data-[on=true]:bg-muted data-[on=true]:text-foreground data-[on=true]:border-muted-foreground/40" },
+                        ].map(({ v, cls }) => {
+                          const on = getCompVal(q.id).value === v;
+                          return (
+                            <button
+                              key={v}
+                              type="button"
+                              data-on={on}
+                              disabled={submitted}
+                              onClick={() => setCompField(q.id, { value: v })}
+                              className={`px-4 py-2 rounded-md border text-sm transition-colors bg-background hover:bg-accent hover:text-accent-foreground ${cls}`}
+                            >{v}</button>
+                          );
+                        })}
+                      </div>
+                      <Textarea
+                        placeholder="Comments (optional)"
+                        value={getCompVal(q.id).comment ?? ""}
+                        onChange={(e) => setCompField(q.id, { comment: e.target.value })}
+                        disabled={submitted}
+                        maxLength={2000}
+                        rows={2}
+                      />
+                      <div className="flex items-center gap-3">
+                        <label className="cursor-pointer">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            disabled={submitted}
+                            onChange={(e) => e.target.files?.[0] && onUploadFile(q.id, e.target.files[0])}
+                          />
+                          <span className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
+                            <Camera className="h-4 w-4" /> {getCompVal(q.id).evidence?.name ? "Replace photo evidence" : "Add photo evidence"}
+                          </span>
+                        </label>
+                        {getCompVal(q.id).evidence?.name && (
+                          <span className="text-xs text-muted-foreground truncate max-w-xs">{getCompVal(q.id).evidence!.name}</span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (<>
                   {q.type === "text" && (
                     <Input value={answers[q.id] ?? ""} onChange={(e) => updateAnswer(q.id, e.target.value)} disabled={submitted} maxLength={500} />
                   )}
@@ -268,6 +316,7 @@ function FillSurvey() {
                       {answers[q.id]?.name && <span className="text-xs text-muted-foreground">{answers[q.id].name}</span>}
                     </div>
                   )}
+                  </>)}
                 </div>
               ))}
             </div>
