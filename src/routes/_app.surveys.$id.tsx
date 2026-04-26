@@ -265,6 +265,25 @@ function SurveyEditor() {
             <Textarea value={survey.description ?? ""} onChange={(e) => updateField({ description: e.target.value })} disabled={!isDraft} maxLength={500} />
           </div>
           <div className="space-y-1.5">
+            <Label>Survey mode</Label>
+            <Select
+              value={survey.mode}
+              onValueChange={(v) => updateField({ mode: v as "free" | "compliance" })}
+              disabled={!isDraft}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="free">Free Mode — mixed question types (text, ratings, choice…)</SelectItem>
+                <SelectItem value="compliance">Compliance Mode — Yes/No with comments &amp; photo evidence</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {survey.mode === "compliance"
+                ? "AI extraction will turn every item into a Yes / No / N/A check. Members can add a comment and upload photo evidence per item."
+                : "Choose any question type per item. Photo / file uploads only on questions you mark as 'File / Photo'."}
+            </p>
+          </div>
+          <div className="space-y-1.5">
             <Label>Assign to group</Label>
             <Select
               value={survey.assigned_group_id ?? ""}
