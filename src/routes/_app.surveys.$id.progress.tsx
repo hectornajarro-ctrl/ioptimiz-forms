@@ -80,7 +80,33 @@ function SurveyProgress() {
       ) : members.length === 0 ? (
         <div className="text-center text-muted-foreground py-12 border border-dashed rounded-lg">No members in the assigned group.</div>
       ) : (
-        <div className="space-y-3">
+        <>
+          {(() => {
+            const submitted = members.filter((m) => m.submitted).length;
+            const allDone = submitted === members.length;
+            const pct = Math.round((submitted / members.length) * 100);
+            return (
+              <div className={`rounded-lg border p-5 mb-5 ${allDone ? "bg-success/10 border-success/30" : "bg-card"}`} style={{ boxShadow: "var(--shadow-card)" }}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="font-semibold tracking-tight flex items-center gap-2">
+                    {allDone ? (
+                      <><CheckCircle2 className="h-5 w-5 text-success" /> All members completed</>
+                    ) : (
+                      <><Clock className="h-5 w-5 text-muted-foreground" /> In progress</>
+                    )}
+                  </div>
+                  <div className="text-sm font-medium">{submitted} / {members.length} submitted</div>
+                </div>
+                <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                  <div
+                    className={`h-full transition-all ${allDone ? "bg-success" : "bg-accent"}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })()}
+          <div className="space-y-3">
           {members.map((m) => (
             <div key={m.id} className="rounded-lg border bg-card p-4" style={{ boxShadow: "var(--shadow-card)" }}>
               <div className="flex items-center justify-between mb-2">
@@ -104,7 +130,8 @@ function SurveyProgress() {
               </div>
             </div>
           ))}
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

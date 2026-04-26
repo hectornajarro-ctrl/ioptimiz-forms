@@ -4,7 +4,12 @@ import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Plus, FileText, Clock, CheckCircle2 } from "lucide-react";
+import { Plus, FileText, Clock, CheckCircle2, Trash2, Users } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface SurveyRow {
   id: string;
@@ -13,6 +18,9 @@ interface SurveyRow {
   status: "draft" | "approved" | "archived";
   created_at: string;
   assigned_group_id: string | null;
+  total_members?: number;
+  submitted_members?: number;
+  all_completed?: boolean;
 }
 
 export const Route = createFileRoute("/_app/surveys")({
@@ -41,7 +49,36 @@ function Surveys() {
       .select("id,title,description,status,created_at,assigned_group_id")
       .eq("lead_auditor_id", user.id)
       .order("created_at", { ascending: false });
-    setRows((data ?? []) as SurveyRow[]);
+    const surveys = (data ?? []) as SurveyRow[];
+
+    // Compute completion stats for approved surveys with assigned groups
+    const approved = surveys.filter((s) => s.status === "approved" && s.assigned_group_id);
+    if (approved.length > 0) {
+      const groupIds = Array.from(new Set(approved.map((s) => s.assigned_group_id!)));
+      const surveyIds = approved.map((s) => s.id);
+      const [{ data: members }, { data: responses }] = await Promise.all([
+        supabase.from("audit_group_members").select("group_id,user_id").in("group_id", groupIds),
+        supabase.from("survey_responses").select("survey_id,submitted").in("survey_id", surveyIds),
+      ]);
+      const memberCount = new Map<string, number>();
+      (members ?? []).forEach((m) => {
+        memberCount.set(m.group_id, (memberCount.get(m.group_id) ?? 0) + 1);
+      });
+      const submittedCount = new Map<string, number>();
+      (responses ?? []).forEach((r) => {
+        if (r.submitted) submittedCount.set(r.survey_id, (submittedCount.get(r.survey_id) ?? 0) + 1);
+      });
+      surveys.forEach((s) => {
+        if (s.status === "approved" && s.assigned_group_id) {
+          const total = memberCount.get(s.assigned_group_id) ?? 0;
+          const done = submittedCount.get(s.id) ?? 0;
+          s.total_members = total;
+          s.submitted_members = done;
+          s.all_completed = total > 0 && done >= total;
+        }
+      });
+    }
+    setRows(surveys);
   };
 
   useEffect(() => { if (user) load(); }, [user]);
@@ -56,6 +93,13 @@ function Surveys() {
     setCreating(false);
     if (error) return toast.error(error.message);
     navigate({ to: "/surveys/$id", params: { id: data.id } });
+  };
+
+  const deleteSurvey = async (surveyId: string) => {
+    const { error } = await supabase.from("surveys").delete().eq("id", surveyId);
+    if (error) return toast.error(error.message);
+    toast.success("Draft deleted");
+    load();
   };
 
   const statusBadge = (s: SurveyRow["status"]) => {
@@ -97,19 +141,68 @@ function Surveys() {
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {rows.map((s) => (
-            <Link key={s.id} to="/surveys/$id" params={{ id: s.id }}>
-              <div className="rounded-lg border border-border bg-card p-5 h-full transition-colors hover:border-accent" style={{ boxShadow: "var(--shadow-card)" }}>
-                <div className="flex items-start justify-between mb-3">
+            <div key={s.id} className="relative rounded-lg border border-border bg-card p-5 h-full transition-colors hover:border-accent" style={{ boxShadow: "var(--shadow-card)" }}>
+              {s.status === "draft" && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute top-2 right-2 h-7 w-7 text-muted-foreground hover:text-destructive z-10"
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete this draft?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        "{s.title}" will be permanently deleted. This cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => deleteSurvey(s.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+              <Link to="/surveys/$id" params={{ id: s.id }} className="block">
+                <div className="flex items-start justify-between mb-3 pr-8">
                   <FileText className="h-5 w-5 text-muted-foreground" />
-                  {statusBadge(s.status)}
+                  <div className="flex items-center gap-2">
+                    {s.status === "approved" && s.all_completed && (
+                      <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs bg-success/15 text-success">
+                        <CheckCircle2 className="h-3 w-3" /> Completed
+                      </span>
+                    )}
+                    {statusBadge(s.status)}
+                  </div>
                 </div>
                 <div className="font-semibold tracking-tight">{s.title}</div>
                 {s.description && <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{s.description}</p>}
+                {s.status === "approved" && typeof s.total_members === "number" && (
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
+                      <span className="inline-flex items-center gap-1"><Users className="h-3 w-3" /> Members completed</span>
+                      <span>{s.submitted_members ?? 0} / {s.total_members}</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                      <div
+                        className={`h-full transition-all ${s.all_completed ? "bg-success" : "bg-accent"}`}
+                        style={{ width: `${s.total_members > 0 ? Math.round(((s.submitted_members ?? 0) / s.total_members) * 100) : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
                 <div className="text-xs text-muted-foreground mt-4">
                   {new Date(s.created_at).toLocaleDateString()}
                 </div>
-              </div>
-            </Link>
+              </Link>
+            </div>
           ))}
         </div>
       )}
