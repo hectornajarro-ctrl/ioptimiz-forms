@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Upload, Sparkles, Plus, Trash2, ArrowLeft, BarChart3, CheckCircle2 } from "lucide-react";
+import { Upload, Sparkles, Plus, Trash2, ArrowLeft, BarChart3, CheckCircle2, Download } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
@@ -72,6 +72,7 @@ function SurveyEditor() {
   const [extracting, setExtracting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const load = async () => {
     const { data, error } = await supabase
@@ -186,6 +187,20 @@ function SurveyEditor() {
     navigate({ to: "/surveys" });
   };
 
+  const exportCombined = async () => {
+    setExporting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("export-survey-pdf", { body: { surveyId: survey.id } });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      if (data?.url) window.open(data.url, "_blank");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // Schema editing helpers
   const addSection = () => updateSchema([...survey.schema.sections, { id: uid(), title: "New section", questions: [] }]);
   const removeSection = (sid: string) => updateSchema(survey.schema.sections.filter((s) => s.id !== sid));
@@ -219,6 +234,11 @@ function SurveyEditor() {
             <Link to="/surveys/$id/progress" params={{ id: survey.id }}>
               <Button variant="outline"><BarChart3 className="h-4 w-4 mr-2" /> View progress</Button>
             </Link>
+          )}
+          {survey.status === "approved" && isOwner && (
+            <Button variant="outline" onClick={exportCombined} disabled={exporting}>
+              <Download className="h-4 w-4 mr-2" /> {exporting ? "Generating…" : "Export report"}
+            </Button>
           )}
           {isDraft && isOwner && (
             <>
