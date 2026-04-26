@@ -39,6 +39,7 @@ interface SurveyRow {
   title: string;
   description: string | null;
   status: "draft" | "approved" | "archived";
+  mode: "free" | "compliance";
   pdf_path: string | null;
   schema: { sections: Section[] };
   assigned_group_id: string | null;
@@ -75,12 +76,12 @@ function SurveyEditor() {
   const load = async () => {
     const { data, error } = await supabase
       .from("surveys")
-      .select("id,title,description,status,pdf_path,schema,assigned_group_id,lead_auditor_id")
+      .select("id,title,description,status,mode,pdf_path,schema,assigned_group_id,lead_auditor_id")
       .eq("id", id)
       .single();
     if (error) { toast.error(error.message); return; }
     const sch = (data.schema as any) ?? { sections: [] };
-    setSurvey({ ...data, schema: { sections: sch.sections ?? [] } } as SurveyRow);
+    setSurvey({ ...data, mode: (data as any).mode ?? "free", schema: { sections: sch.sections ?? [] } } as SurveyRow);
 
     // Admins can assign to ANY group; lead auditors can only assign to groups they lead
     const groupQuery = hasRole("admin")
@@ -114,6 +115,7 @@ function SurveyEditor() {
       .update({
         title: survey.title,
         description: survey.description,
+        mode: survey.mode,
         schema: survey.schema as any,
         assigned_group_id: survey.assigned_group_id,
       })
