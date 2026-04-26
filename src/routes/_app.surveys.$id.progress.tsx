@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, CheckCircle2, Clock } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock, Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 interface Member {
   id: string;
@@ -21,6 +23,23 @@ function SurveyProgress() {
   const [survey, setSurvey] = useState<{ title: string; assigned_group_id: string | null } | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exportingId, setExportingId] = useState<string | null>(null);
+
+  const exportMember = async (memberId: string) => {
+    setExportingId(memberId);
+    try {
+      const { data, error } = await supabase.functions.invoke("export-survey-pdf", {
+        body: { surveyId: id, userId: memberId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      if (data?.url) window.open(data.url, "_blank");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Export failed");
+    } finally {
+      setExportingId(null);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -116,7 +135,12 @@ function SurveyProgress() {
                 </div>
                 <div className="text-sm font-medium flex items-center gap-2">
                   {m.submitted ? (
-                    <span className="text-success flex items-center gap-1"><CheckCircle2 className="h-4 w-4" /> Submitted</span>
+                    <>
+                      <span className="text-success flex items-center gap-1"><CheckCircle2 className="h-4 w-4" /> Submitted</span>
+                      <Button size="sm" variant="outline" onClick={() => exportMember(m.id)} disabled={exportingId === m.id}>
+                        <Download className="h-4 w-4 mr-1.5" /> {exportingId === m.id ? "…" : "Export"}
+                      </Button>
+                    </>
                   ) : (
                     <span className="text-muted-foreground flex items-center gap-1"><Clock className="h-4 w-4" /> {Math.round(m.progress)}%</span>
                   )}

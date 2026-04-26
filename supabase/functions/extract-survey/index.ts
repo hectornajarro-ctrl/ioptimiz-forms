@@ -84,7 +84,7 @@ serve(async (req) => {
 
     const { data: survey, error: sErr } = await admin
       .from("surveys")
-      .select("id, pdf_path, title, lead_auditor_id")
+      .select("id, pdf_path, title, lead_auditor_id, mode")
       .eq("id", surveyId)
       .single();
     if (sErr || !survey) throw new Error("Survey not found");
@@ -100,6 +100,8 @@ serve(async (req) => {
     }
     if (!survey.pdf_path) throw new Error("No PDF uploaded");
 
+    const mode: "free" | "compliance" = (survey as any).mode === "compliance" ? "compliance" : "free";
+
     // Download PDF
     const { data: blob, error: dlErr } = await admin.storage.from("survey-pdfs").download(survey.pdf_path);
     if (dlErr || !blob) throw new Error("Could not download PDF");
@@ -107,6 +109,12 @@ serve(async (req) => {
     let binary = "";
     for (let i = 0; i < buf.length; i++) binary += String.fromCharCode(buf[i]);
     const b64 = btoa(binary);
+
+    // System prompt depends on mode
+    const systemPrompt =
+      mode === "compliance"
+        ? "You are an expert at converting audit checklists into COMPLIANCE forms. EVERY item you extract MUST be a 'yes_no' question phrased so that 'Yes' = compliant and 'No' = not compliant. Do not produce any other type. Auditors will be able to add comments and photo evidence per item, so do not create separate questions for evidence or remarks. Be thorough but do not invent items that aren't in the document."
+        : "You are an expert at converting audit checklists and survey PDFs into structured digital forms. Identify sections, questions, and the most appropriate field type for each question. Use 'yes_no' for compliance/Y-N items, 'rating' for scored items, 'multiple_choice' when options are listed, 'file' if evidence/photos are requested, 'textarea' for long-form notes, and 'text' for short answers. Be thorough but do not invent questions that aren't in the document.";
 
     // Call Lovable AI Gateway with PDF as inline data + tool calling for structured output
     const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -120,8 +128,7 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content:
-              "You are an expert at converting audit checklists and survey PDFs into structured digital forms. Identify sections, questions, and the most appropriate field type for each question. Use 'yes_no' for compliance/Y-N items, 'rating' for scored items, 'multiple_choice' when options are listed, 'file' if evidence/photos are requested, 'textarea' for long-form notes, and 'text' for short answers. Be thorough but do not invent questions that aren't in the document.",
+            content: systemPrompt,
           },
           {
             role: "user",
@@ -163,9 +170,9 @@ serve(async (req) => {
       questions: (sec.questions ?? []).map((q: any, qi: number) => ({
         id: `q${si}_${qi}_${crypto.randomUUID().slice(0, 8)}`,
         label: q.label,
-        type: q.type,
+        type: mode === "compliance" ? "yes_no" : q.type,
         required: !!q.required,
-        options: q.options ?? [],
+        options: mode === "compliance" ? [] : (q.options ?? []),
         scale_max: q.scale_max ?? 5,
       })),
     }));

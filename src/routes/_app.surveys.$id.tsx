@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Upload, Sparkles, Plus, Trash2, ArrowLeft, BarChart3, CheckCircle2 } from "lucide-react";
+import { Upload, Sparkles, Plus, Trash2, ArrowLeft, BarChart3, CheckCircle2, Download } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
@@ -39,6 +39,7 @@ interface SurveyRow {
   title: string;
   description: string | null;
   status: "draft" | "approved" | "archived";
+  mode: "free" | "compliance";
   pdf_path: string | null;
   schema: { sections: Section[] };
   assigned_group_id: string | null;
@@ -71,16 +72,17 @@ function SurveyEditor() {
   const [extracting, setExtracting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const load = async () => {
     const { data, error } = await supabase
       .from("surveys")
-      .select("id,title,description,status,pdf_path,schema,assigned_group_id,lead_auditor_id")
+      .select("id,title,description,status,mode,pdf_path,schema,assigned_group_id,lead_auditor_id")
       .eq("id", id)
       .single();
     if (error) { toast.error(error.message); return; }
     const sch = (data.schema as any) ?? { sections: [] };
-    setSurvey({ ...data, schema: { sections: sch.sections ?? [] } } as SurveyRow);
+    setSurvey({ ...data, mode: (data as any).mode ?? "free", schema: { sections: sch.sections ?? [] } } as SurveyRow);
 
     // Admins can assign to ANY group; lead auditors can only assign to groups they lead
     const groupQuery = hasRole("admin")
@@ -114,6 +116,7 @@ function SurveyEditor() {
       .update({
         title: survey.title,
         description: survey.description,
+        mode: survey.mode,
         schema: survey.schema as any,
         assigned_group_id: survey.assigned_group_id,
       })
@@ -184,6 +187,20 @@ function SurveyEditor() {
     navigate({ to: "/surveys" });
   };
 
+  const exportCombined = async () => {
+    setExporting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("export-survey-pdf", { body: { surveyId: survey.id } });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      if (data?.url) window.open(data.url, "_blank");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // Schema editing helpers
   const addSection = () => updateSchema([...survey.schema.sections, { id: uid(), title: "New section", questions: [] }]);
   const removeSection = (sid: string) => updateSchema(survey.schema.sections.filter((s) => s.id !== sid));
@@ -217,6 +234,11 @@ function SurveyEditor() {
             <Link to="/surveys/$id/progress" params={{ id: survey.id }}>
               <Button variant="outline"><BarChart3 className="h-4 w-4 mr-2" /> View progress</Button>
             </Link>
+          )}
+          {survey.status === "approved" && isOwner && (
+            <Button variant="outline" onClick={exportCombined} disabled={exporting}>
+              <Download className="h-4 w-4 mr-2" /> {exporting ? "Generating…" : "Export report"}
+            </Button>
           )}
           {isDraft && isOwner && (
             <>
@@ -261,6 +283,25 @@ function SurveyEditor() {
           <div className="space-y-1.5">
             <Label>Description</Label>
             <Textarea value={survey.description ?? ""} onChange={(e) => updateField({ description: e.target.value })} disabled={!isDraft} maxLength={500} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Survey mode</Label>
+            <Select
+              value={survey.mode}
+              onValueChange={(v) => updateField({ mode: v as "free" | "compliance" })}
+              disabled={!isDraft}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="free">Free Mode — mixed question types (text, ratings, choice…)</SelectItem>
+                <SelectItem value="compliance">Compliance Mode — Yes/No with comments &amp; photo evidence</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {survey.mode === "compliance"
+                ? "AI extraction will turn every item into a Yes / No / N/A check. Members can add a comment and upload photo evidence per item."
+                : "Choose any question type per item. Photo / file uploads only on questions you mark as 'File / Photo'."}
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label>Assign to group</Label>
