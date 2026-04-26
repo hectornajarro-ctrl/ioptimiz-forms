@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
@@ -20,6 +20,7 @@ export const Route = createFileRoute("/_app/assigned")({
 
 function AssignedAudits() {
   const { user } = useAuth();
+  const location = useLocation();
   const [rows, setRows] = useState<AssignedSurvey[]>([]);
 
   useEffect(() => {
@@ -45,6 +46,9 @@ function AssignedAudits() {
       }));
     })();
   }, [user]);
+
+  const isListRoute = location.pathname === "/assigned" || location.pathname === "/assigned/";
+  if (!isListRoute) return <Outlet />;
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
