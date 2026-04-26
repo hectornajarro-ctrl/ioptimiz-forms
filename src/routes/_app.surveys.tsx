@@ -4,12 +4,7 @@ import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Plus, FileText, Clock, CheckCircle2, Trash2, Users } from "lucide-react";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
-  AlertDialogTitle, AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { Plus, FileText, Clock, CheckCircle2, Users } from "lucide-react";
 
 interface SurveyRow {
   id: string;
@@ -95,13 +90,6 @@ function Surveys() {
     navigate({ to: "/surveys/$id", params: { id: data.id } });
   };
 
-  const deleteSurvey = async (surveyId: string) => {
-    const { error } = await supabase.from("surveys").delete().eq("id", surveyId);
-    if (error) return toast.error(error.message);
-    toast.success("Draft deleted");
-    load();
-  };
-
   const statusBadge = (s: SurveyRow["status"]) => {
     const map: Record<string, { bg: string; text: string; label: string; icon: React.ComponentType<{ className?: string }> }> = {
       draft: { bg: "bg-warning/15", text: "text-warning-foreground", label: "Draft", icon: Clock },
@@ -142,36 +130,8 @@ function Surveys() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {rows.map((s) => (
             <div key={s.id} className="relative rounded-lg border border-border bg-card p-5 h-full transition-colors hover:border-accent" style={{ boxShadow: "var(--shadow-card)" }}>
-              {s.status === "draft" && (
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="absolute top-2 right-2 h-7 w-7 text-muted-foreground hover:text-destructive z-10"
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete this draft?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        "{s.title}" will be permanently deleted. This cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => deleteSurvey(s.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                        Delete
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              )}
               <Link to="/surveys/$id" params={{ id: s.id }} className="block">
-                <div className="flex items-start justify-between mb-3 pr-8">
+                <div className="flex items-start justify-between mb-3">
                   <FileText className="h-5 w-5 text-muted-foreground" />
                   <div className="flex items-center gap-2">
                     {s.status === "approved" && s.all_completed && (
