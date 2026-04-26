@@ -179,6 +179,7 @@ export type Database = {
           description: string | null
           id: string
           lead_auditor_id: string
+          mode: Database["public"]["Enums"]["survey_mode"]
           pdf_path: string | null
           schema: Json
           status: Database["public"]["Enums"]["survey_status"]
@@ -192,6 +193,7 @@ export type Database = {
           description?: string | null
           id?: string
           lead_auditor_id: string
+          mode?: Database["public"]["Enums"]["survey_mode"]
           pdf_path?: string | null
           schema?: Json
           status?: Database["public"]["Enums"]["survey_status"]
@@ -205,6 +207,7 @@ export type Database = {
           description?: string | null
           id?: string
           lead_auditor_id?: string
+          mode?: Database["public"]["Enums"]["survey_mode"]
           pdf_path?: string | null
           schema?: Json
           status?: Database["public"]["Enums"]["survey_status"]
@@ -266,6 +269,7 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "lead_auditor" | "member_auditor"
+      survey_mode: "free" | "compliance"
       survey_status: "draft" | "approved" | "archived"
     }
     CompositeTypes: {
@@ -395,6 +399,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "lead_auditor", "member_auditor"],
+      survey_mode: ["free", "compliance"],
       survey_status: ["draft", "approved", "archived"],
     },
   },
