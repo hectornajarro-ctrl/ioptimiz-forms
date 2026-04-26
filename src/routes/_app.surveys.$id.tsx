@@ -11,6 +11,11 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Upload, Sparkles, Plus, Trash2, ArrowLeft, BarChart3, CheckCircle2 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 type FieldType = "text" | "textarea" | "yes_no" | "multiple_choice" | "rating" | "file";
 
@@ -172,6 +177,13 @@ function SurveyEditor() {
     await load();
   };
 
+  const deleteSurvey = async () => {
+    const { error } = await supabase.from("surveys").delete().eq("id", survey.id);
+    if (error) return toast.error(error.message);
+    toast.success("Draft deleted");
+    navigate({ to: "/surveys" });
+  };
+
   // Schema editing helpers
   const addSection = () => updateSchema([...survey.schema.sections, { id: uid(), title: "New section", questions: [] }]);
   const removeSection = (sid: string) => updateSchema(survey.schema.sections.filter((s) => s.id !== sid));
@@ -210,6 +222,27 @@ function SurveyEditor() {
             <>
               <Button variant="outline" onClick={persist} disabled={saving}>{saving ? "Saving…" : "Save draft"}</Button>
               <Button onClick={approve}><CheckCircle2 className="h-4 w-4 mr-2" /> Approve & assign</Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" className="text-destructive hover:text-destructive">
+                    <Trash2 className="h-4 w-4 mr-2" /> Delete
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete this draft?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      "{survey.title}" will be permanently deleted. This cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={deleteSurvey} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </>
           )}
           {!isDraft && isOwner && (
