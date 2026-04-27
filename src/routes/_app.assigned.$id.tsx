@@ -167,6 +167,9 @@ function FillSurvey() {
 
   const persist = async (opts: { submit?: boolean } = {}) => {
     if (!responseId) return;
+    if (survey?.ends_at && new Date(survey.ends_at).getTime() < Date.now() && !submitted) {
+      return toast.error("This audit has closed and can no longer be modified.");
+    }
     setSaving(true);
     const payload: any = { answers, progress };
     if (opts.submit) {
