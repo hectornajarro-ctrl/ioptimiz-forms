@@ -179,8 +179,8 @@ function AdminGroups() {
                 <Textarea value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} />
               </div>
               <div className="space-y-1.5">
-                <Label>Lead Auditor</Label>
-                <Select value={leadId} onValueChange={setLeadId}>
+                <Label>Lead Auditor {!isAdmin && <span className="text-xs text-muted-foreground font-normal">(you)</span>}</Label>
+                <Select value={leadId} onValueChange={setLeadId} disabled={!isAdmin}>
                   <SelectTrigger><SelectValue placeholder="Select a lead auditor" /></SelectTrigger>
                   <SelectContent>
                     {leadOptions.length === 0 && <div className="px-3 py-2 text-sm text-muted-foreground">No lead auditors. Assign role on Users page.</div>}
