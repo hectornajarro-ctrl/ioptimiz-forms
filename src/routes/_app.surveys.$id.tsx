@@ -334,6 +334,29 @@ function SurveyEditor() {
               </SelectContent>
             </Select>
           </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label>Available from <span className="text-xs text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                type="datetime-local"
+                value={toLocalInput(survey.starts_at)}
+                onChange={(e) => updateField({ starts_at: fromLocalInput(e.target.value) })}
+                disabled={!isDraft}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Available until <span className="text-xs text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                type="datetime-local"
+                value={toLocalInput(survey.ends_at)}
+                onChange={(e) => updateField({ ends_at: fromLocalInput(e.target.value) })}
+                disabled={!isDraft}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground sm:col-span-2 -mt-1">
+              Members can only fill out this survey within this window. Leave empty for no time limit.
+            </p>
+          </div>
         </div>
       </div>
 
