@@ -64,6 +64,20 @@ export const Route = createFileRoute("/_app/surveys/$id")({
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
+// Convert ISO string ↔ value for <input type="datetime-local"> (in user's local zone)
+function toLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function fromLocalInput(v: string): string | null {
+  if (!v) return null;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 function SurveyEditor() {
   const { id } = Route.useParams();
   const { user, session, hasRole } = useAuth();
