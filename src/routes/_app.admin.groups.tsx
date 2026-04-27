@@ -41,6 +41,8 @@ export const Route = createFileRoute("/_app/admin/groups")({
 function AdminGroups() {
   const { user, hasRole, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const isAdmin = hasRole("admin");
+  const isLead = hasRole("lead_auditor");
   const [groups, setGroups] = useState<GroupRow[]>([]);
   const [users, setUsers] = useState<UserOpt[]>([]);
   const [open, setOpen] = useState(false);
@@ -52,8 +54,8 @@ function AdminGroups() {
   const [openEnrollment, setOpenEnrollment] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && !hasRole("admin")) navigate({ to: "/dashboard" });
-  }, [authLoading, hasRole, navigate]);
+    if (!authLoading && !isAdmin && !isLead) navigate({ to: "/dashboard" });
+  }, [authLoading, isAdmin, isLead, navigate]);
 
   const load = async () => {
     const { data: g } = await supabase.from("audit_groups").select("id,name,description,lead_auditor_id,open_enrollment");
@@ -73,14 +75,17 @@ function AdminGroups() {
     setUsers((profiles ?? []).map((p) => ({ ...p, roles: rolesMap[p.id] ?? [] })));
   };
 
-  useEffect(() => { if (hasRole("admin")) load(); }, [hasRole]);
+  useEffect(() => { if (isAdmin || isLead) load(); }, [isAdmin, isLead]);
 
   const resetForm = () => {
     setEditing(null);
-    setName(""); setDescription(""); setLeadId(""); setMemberIds(new Set()); setOpenEnrollment(false);
+    setName(""); setDescription(""); setLeadId(isAdmin ? "" : (user?.id ?? "")); setMemberIds(new Set()); setOpenEnrollment(false);
   };
 
   const openEdit = async (g: GroupRow) => {
+    if (!isAdmin && g.lead_auditor_id !== user?.id) {
+      return toast.error("You can only edit groups you lead");
+    }
     setEditing(g);
     setName(g.name);
     setDescription(g.description ?? "");
@@ -94,6 +99,10 @@ function AdminGroups() {
   const save = async () => {
     if (!name.trim() || !leadId) return toast.error("Name and Lead Auditor are required");
     if (!user) return;
+    // Lead auditors can only create/edit groups where they are the lead
+    if (!isAdmin && leadId !== user.id) {
+      return toast.error("You can only create groups where you are the lead");
+    }
     let groupId = editing?.id;
     if (editing) {
       const { error } = await supabase
@@ -126,6 +135,10 @@ function AdminGroups() {
   };
 
   const remove = async (id: string) => {
+    const target = groups.find((g) => g.id === id);
+    if (!isAdmin && target && target.lead_auditor_id !== user?.id) {
+      return toast.error("You can only delete groups you lead");
+    }
     if (!confirm("Delete this group? This cannot be undone.")) return;
     const { error } = await supabase.from("audit_groups").delete().eq("id", id);
     if (error) return toast.error(error.message);
@@ -135,13 +148,18 @@ function AdminGroups() {
 
   const leadOptions = users.filter((u) => u.roles.includes("lead_auditor"));
   const memberOptions = users.filter((u) => u.roles.includes("member_auditor"));
+  const visibleGroups = isAdmin ? groups : groups.filter((g) => g.lead_auditor_id === user?.id);
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Audit Groups</h1>
-          <p className="text-muted-foreground mt-1">Each group has one Lead Auditor and several Member Auditors.</p>
+          <p className="text-muted-foreground mt-1">
+            {isAdmin
+              ? "Each group has one Lead Auditor and several Member Auditors."
+              : "Groups you lead. You can create new groups and manage their members."}
+          </p>
         </div>
         <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) resetForm(); }}>
           <DialogTrigger asChild>
