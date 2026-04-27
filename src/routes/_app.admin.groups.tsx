@@ -52,6 +52,7 @@ function AdminGroups() {
   const [leadId, setLeadId] = useState("");
   const [memberIds, setMemberIds] = useState<Set<string>>(new Set());
   const [openEnrollment, setOpenEnrollment] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !isAdmin && !isLead) navigate({ to: "/dashboard" });
@@ -108,35 +109,46 @@ function AdminGroups() {
     if (!isAdmin && leadId !== user.id) {
       return toast.error("You can only create groups where you are the lead");
     }
-    let groupId = editing?.id;
-    if (editing) {
-      const { error } = await supabase
-        .from("audit_groups")
-        .update({ name: name.trim(), description: description.trim() || null, lead_auditor_id: leadId, open_enrollment: openEnrollment })
-        .eq("id", editing.id);
-      if (error) return toast.error(error.message);
-    } else {
-      const { data, error } = await supabase
-        .from("audit_groups")
-        .insert({ name: name.trim(), description: description.trim() || null, lead_auditor_id: leadId, created_by: user.id, open_enrollment: openEnrollment })
-        .select("id").single();
-      if (error) return toast.error(error.message);
-      groupId = data.id;
-    }
-    if (groupId) {
-      await supabase.from("audit_group_members").delete().eq("group_id", groupId);
-      if (!openEnrollment) {
-        const inserts = Array.from(memberIds).map((uid) => ({ group_id: groupId!, user_id: uid }));
-        if (inserts.length > 0) {
-          const { error } = await supabase.from("audit_group_members").insert(inserts);
-          if (error) return toast.error(error.message);
+    if (saving) return;
+    setSaving(true);
+    try {
+      let groupId = editing?.id;
+      if (editing) {
+        const { error } = await supabase
+          .from("audit_groups")
+          .update({ name: name.trim(), description: description.trim() || null, lead_auditor_id: leadId, open_enrollment: openEnrollment })
+          .eq("id", editing.id);
+        if (error) return toast.error(error.message);
+      } else {
+        const { data, error } = await supabase
+          .from("audit_groups")
+          .insert({ name: name.trim(), description: description.trim() || null, lead_auditor_id: leadId, created_by: user.id, open_enrollment: openEnrollment })
+          .select("id").single();
+        if (error) {
+          if ((error as { code?: string }).code === "23505") {
+            return toast.error("A group with this name already exists for this Lead Auditor");
+          }
+          return toast.error(error.message);
+        }
+        groupId = data.id;
+      }
+      if (groupId) {
+        await supabase.from("audit_group_members").delete().eq("group_id", groupId);
+        if (!openEnrollment) {
+          const inserts = Array.from(memberIds).map((uid) => ({ group_id: groupId!, user_id: uid }));
+          if (inserts.length > 0) {
+            const { error } = await supabase.from("audit_group_members").insert(inserts);
+            if (error) return toast.error(error.message);
+          }
         }
       }
+      toast.success(editing ? "Group updated" : "Group created");
+      setOpen(false);
+      resetForm();
+      load();
+    } finally {
+      setSaving(false);
     }
-    toast.success(editing ? "Group updated" : "Group created");
-    setOpen(false);
-    resetForm();
-    load();
   };
 
   const remove = async (id: string) => {
@@ -231,7 +243,9 @@ function AdminGroups() {
                   ))}
                 </div>
               </div>
-              <Button onClick={save} className="w-full">{editing ? "Save changes" : "Create group"}</Button>
+              <Button onClick={save} disabled={saving} className="w-full">
+                {saving ? "Saving…" : (editing ? "Save changes" : "Create group")}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
