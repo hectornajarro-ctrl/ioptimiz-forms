@@ -77,6 +77,11 @@ function AdminGroups() {
 
   useEffect(() => { if (isAdmin || isLead) load(); }, [isAdmin, isLead]);
 
+  // Pre-select self as lead when a non-admin lead auditor opens the dialog
+  useEffect(() => {
+    if (open && !editing && !isAdmin && user) setLeadId(user.id);
+  }, [open, editing, isAdmin, user]);
+
   const resetForm = () => {
     setEditing(null);
     setName(""); setDescription(""); setLeadId(isAdmin ? "" : (user?.id ?? "")); setMemberIds(new Set()); setOpenEnrollment(false);
