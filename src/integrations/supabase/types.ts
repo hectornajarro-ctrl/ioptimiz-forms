@@ -51,6 +51,7 @@ export type Database = {
           id: string
           lead_auditor_id: string
           name: string
+          open_enrollment: boolean
         }
         Insert: {
           created_at?: string
@@ -59,6 +60,7 @@ export type Database = {
           id?: string
           lead_auditor_id: string
           name: string
+          open_enrollment?: boolean
         }
         Update: {
           created_at?: string
@@ -67,6 +69,7 @@ export type Database = {
           id?: string
           lead_auditor_id?: string
           name?: string
+          open_enrollment?: boolean
         }
         Relationships: []
       }
@@ -266,6 +269,7 @@ export type Database = {
         Args: { _group_id: string; _user_id: string }
         Returns: boolean
       }
+      is_group_open_unclaimed: { Args: { _group_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "lead_auditor" | "member_auditor"
