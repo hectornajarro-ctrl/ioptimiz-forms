@@ -180,11 +180,13 @@ export type Database = {
           assigned_group_id: string | null
           created_at: string
           description: string | null
+          ends_at: string | null
           id: string
           lead_auditor_id: string
           mode: Database["public"]["Enums"]["survey_mode"]
           pdf_path: string | null
           schema: Json
+          starts_at: string | null
           status: Database["public"]["Enums"]["survey_status"]
           title: string
           updated_at: string
@@ -194,11 +196,13 @@ export type Database = {
           assigned_group_id?: string | null
           created_at?: string
           description?: string | null
+          ends_at?: string | null
           id?: string
           lead_auditor_id: string
           mode?: Database["public"]["Enums"]["survey_mode"]
           pdf_path?: string | null
           schema?: Json
+          starts_at?: string | null
           status?: Database["public"]["Enums"]["survey_status"]
           title: string
           updated_at?: string
@@ -208,11 +212,13 @@ export type Database = {
           assigned_group_id?: string | null
           created_at?: string
           description?: string | null
+          ends_at?: string | null
           id?: string
           lead_auditor_id?: string
           mode?: Database["public"]["Enums"]["survey_mode"]
           pdf_path?: string | null
           schema?: Json
+          starts_at?: string | null
           status?: Database["public"]["Enums"]["survey_status"]
           title?: string
           updated_at?: string

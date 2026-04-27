@@ -81,9 +81,21 @@ function Surveys() {
   const createSurvey = async () => {
     if (!user) return;
     setCreating(true);
+    // Find an available title (Untitled survey, Untitled survey 2, ...)
+    const { data: existing } = await supabase
+      .from("surveys")
+      .select("title")
+      .eq("lead_auditor_id", user.id)
+      .ilike("title", "untitled survey%");
+    const taken = new Set((existing ?? []).map((r) => r.title.toLowerCase()));
+    let title = "Untitled survey";
+    let n = 2;
+    while (taken.has(title.toLowerCase())) {
+      title = `Untitled survey ${n++}`;
+    }
     const { data, error } = await supabase
       .from("surveys")
-      .insert({ title: "Untitled survey", lead_auditor_id: user.id })
+      .insert({ title, lead_auditor_id: user.id })
       .select("id").single();
     setCreating(false);
     if (error) return toast.error(error.message);

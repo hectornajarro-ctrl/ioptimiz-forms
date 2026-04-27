@@ -44,6 +44,8 @@ interface SurveyRow {
   schema: { sections: Section[] };
   assigned_group_id: string | null;
   lead_auditor_id: string;
+  starts_at: string | null;
+  ends_at: string | null;
 }
 
 const TYPE_LABELS: Record<FieldType, string> = {
@@ -62,6 +64,20 @@ export const Route = createFileRoute("/_app/surveys/$id")({
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
+// Convert ISO string ↔ value for <input type="datetime-local"> (in user's local zone)
+function toLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function fromLocalInput(v: string): string | null {
+  if (!v) return null;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 function SurveyEditor() {
   const { id } = Route.useParams();
   const { user, session, hasRole } = useAuth();
@@ -77,12 +93,18 @@ function SurveyEditor() {
   const load = async () => {
     const { data, error } = await supabase
       .from("surveys")
-      .select("id,title,description,status,mode,pdf_path,schema,assigned_group_id,lead_auditor_id")
+      .select("id,title,description,status,mode,pdf_path,schema,assigned_group_id,lead_auditor_id,starts_at,ends_at")
       .eq("id", id)
       .single();
     if (error) { toast.error(error.message); return; }
     const sch = (data.schema as any) ?? { sections: [] };
-    setSurvey({ ...data, mode: (data as any).mode ?? "free", schema: { sections: sch.sections ?? [] } } as SurveyRow);
+    setSurvey({
+      ...data,
+      mode: (data as any).mode ?? "free",
+      schema: { sections: sch.sections ?? [] },
+      starts_at: (data as any).starts_at ?? null,
+      ends_at: (data as any).ends_at ?? null,
+    } as SurveyRow);
 
     // Admins can assign to ANY group; lead auditors can only assign to groups they lead
     const groupQuery = hasRole("admin")
@@ -110,6 +132,9 @@ function SurveyEditor() {
   const updateSchema = (sections: Section[]) => setSurvey({ ...survey, schema: { sections } });
 
   const persist = async () => {
+    if (survey.starts_at && survey.ends_at && new Date(survey.ends_at) <= new Date(survey.starts_at)) {
+      return toast.error("End date must be after start date");
+    }
     setSaving(true);
     const { error } = await supabase
       .from("surveys")
@@ -119,10 +144,17 @@ function SurveyEditor() {
         mode: survey.mode,
         schema: survey.schema as any,
         assigned_group_id: survey.assigned_group_id,
+        starts_at: survey.starts_at,
+        ends_at: survey.ends_at,
       })
       .eq("id", survey.id);
     setSaving(false);
-    if (error) return toast.error(error.message);
+    if (error) {
+      if ((error as { code?: string }).code === "23505") {
+        return toast.error("Another survey of yours already uses this title");
+      }
+      return toast.error(error.message);
+    }
     toast.success("Saved");
   };
 
@@ -315,6 +347,29 @@ function SurveyEditor() {
                 {groups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
               </SelectContent>
             </Select>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label>Available from <span className="text-xs text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                type="datetime-local"
+                value={toLocalInput(survey.starts_at)}
+                onChange={(e) => updateField({ starts_at: fromLocalInput(e.target.value) })}
+                disabled={!isDraft}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Available until <span className="text-xs text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                type="datetime-local"
+                value={toLocalInput(survey.ends_at)}
+                onChange={(e) => updateField({ ends_at: fromLocalInput(e.target.value) })}
+                disabled={!isDraft}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground sm:col-span-2 -mt-1">
+              Members can only fill out this survey within this window. Leave empty for no time limit.
+            </p>
           </div>
         </div>
       </div>

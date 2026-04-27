@@ -2,7 +2,7 @@ import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-rout
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
-import { ClipboardList, CheckCircle2, Clock, UserPlus } from "lucide-react";
+import { ClipboardList, CheckCircle2, Clock, UserPlus, CalendarClock, CalendarX } from "lucide-react";
 
 interface AssignedSurvey {
   id: string;
@@ -12,6 +12,10 @@ interface AssignedSurvey {
   progress: number;
   submitted: boolean;
   open: boolean;
+  starts_at: string | null;
+  ends_at: string | null;
+  notYetOpen: boolean;
+  closed: boolean;
 }
 
 export const Route = createFileRoute("/_app/assigned")({
@@ -29,7 +33,7 @@ function AssignedAudits() {
     (async () => {
       const { data: surveys } = await supabase
         .from("surveys")
-        .select("id,title,description,approved_at,assigned_group_id")
+        .select("id,title,description,approved_at,assigned_group_id,starts_at,ends_at")
         .eq("status", "approved")
         .order("approved_at", { ascending: false });
       const { data: responses } = await supabase
@@ -42,8 +46,11 @@ function AssignedAudits() {
         : { data: [] as { id: string; open_enrollment: boolean }[] };
       const openMap = new Map((openGroups ?? []).map((g) => [g.id, g.open_enrollment]));
       const map = new Map(responses?.map((r) => [r.survey_id, r]) ?? []);
+      const now = Date.now();
       setRows((surveys ?? []).map((s) => {
         const r = map.get(s.id);
+        const startsAt = (s as { starts_at: string | null }).starts_at;
+        const endsAt = (s as { ends_at: string | null }).ends_at;
         return {
           id: s.id,
           title: s.title,
@@ -52,6 +59,10 @@ function AssignedAudits() {
           progress: Number(r?.progress ?? 0),
           submitted: !!r?.submitted,
           open: !!openMap.get(s.assigned_group_id ?? ""),
+          starts_at: startsAt,
+          ends_at: endsAt,
+          notYetOpen: !!startsAt && new Date(startsAt).getTime() > now,
+          closed: !!endsAt && new Date(endsAt).getTime() < now && !r?.submitted,
         };
       }));
     })();
@@ -72,13 +83,18 @@ function AssignedAudits() {
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 gap-4">
-          {rows.map((s) => (
-            <Link key={s.id} to="/assigned/$id" params={{ id: s.id }}>
-              <div className="rounded-lg border bg-card p-5 h-full transition-colors hover:border-accent" style={{ boxShadow: "var(--shadow-card)" }}>
+          {rows.map((s) => {
+            const locked = (s.notYetOpen || s.closed) && !s.submitted;
+            const inner = (
+              <div className={`rounded-lg border bg-card p-5 h-full transition-colors ${locked ? "opacity-60" : "hover:border-accent"}`} style={{ boxShadow: "var(--shadow-card)" }}>
                 <div className="flex items-start justify-between mb-3">
                   <ClipboardList className="h-5 w-5 text-muted-foreground" />
                   {s.submitted ? (
                     <span className="inline-flex items-center gap-1 text-xs text-success"><CheckCircle2 className="h-3 w-3" /> Submitted</span>
+                  ) : s.notYetOpen ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><CalendarClock className="h-3 w-3" /> Opens {new Date(s.starts_at!).toLocaleString()}</span>
+                  ) : s.closed ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-destructive"><CalendarX className="h-3 w-3" /> Closed</span>
                   ) : s.open ? (
                     <span className="inline-flex items-center gap-1 text-xs text-accent font-medium"><UserPlus className="h-3 w-3" /> Open — claim it</span>
                   ) : (
@@ -87,12 +103,22 @@ function AssignedAudits() {
                 </div>
                 <div className="font-semibold tracking-tight">{s.title}</div>
                 {s.description && <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{s.description}</p>}
+                {(s.starts_at || s.ends_at) && (
+                  <div className="text-xs text-muted-foreground mt-2">
+                    {s.starts_at && <span>From {new Date(s.starts_at).toLocaleDateString()} </span>}
+                    {s.ends_at && <span>until {new Date(s.ends_at).toLocaleDateString()}</span>}
+                  </div>
+                )}
                 <div className="mt-4 h-2 bg-secondary rounded-full overflow-hidden">
                   <div className="h-full bg-accent transition-all" style={{ width: `${s.submitted ? 100 : Math.round(s.progress)}%` }} />
                 </div>
               </div>
-            </Link>
-          ))}
+            );
+            if (locked) return <div key={s.id} className="cursor-not-allowed">{inner}</div>;
+            return (
+              <Link key={s.id} to="/assigned/$id" params={{ id: s.id }}>{inner}</Link>
+            );
+          })}
         </div>
       )}
     </div>

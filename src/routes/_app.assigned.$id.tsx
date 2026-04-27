@@ -30,7 +30,7 @@ function FillSurvey() {
   const { id } = Route.useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [survey, setSurvey] = useState<{ title: string; description: string | null; sections: Section[]; mode: "free" | "compliance"; pdf_path: string | null } | null>(null);
+  const [survey, setSurvey] = useState<{ title: string; description: string | null; sections: Section[]; mode: "free" | "compliance"; pdf_path: string | null; starts_at: string | null; ends_at: string | null } | null>(null);
   const [responseId, setResponseId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [submitted, setSubmitted] = useState(false);
@@ -57,7 +57,7 @@ function FillSurvey() {
     (async () => {
       const { data: s } = await supabase
         .from("surveys")
-        .select("title,description,schema,mode,pdf_path,assigned_group_id")
+        .select("title,description,schema,mode,pdf_path,assigned_group_id,starts_at,ends_at")
         .eq("id", id).single();
       if (!s) return;
       const sch = (s.schema as any) ?? { sections: [] };
@@ -67,7 +67,15 @@ function FillSurvey() {
         sections: sch.sections ?? [],
         mode: ((s as any).mode === "compliance" ? "compliance" : "free"),
         pdf_path: (s as any).pdf_path ?? null,
+        starts_at: (s as any).starts_at ?? null,
+        ends_at: (s as any).ends_at ?? null,
       });
+
+      const now = Date.now();
+      const startsAt = (s as any).starts_at as string | null;
+      const endsAt = (s as any).ends_at as string | null;
+      const notYetOpen = !!startsAt && new Date(startsAt).getTime() > now;
+      const closed = !!endsAt && new Date(endsAt).getTime() < now;
 
       const { data: existing } = await supabase
         .from("survey_responses")
@@ -77,7 +85,20 @@ function FillSurvey() {
         setResponseId(existing.id);
         setAnswers((existing.answers as any) ?? {});
         setSubmitted(existing.submitted);
+        if (closed && !existing.submitted) {
+          toast.error("This audit has closed. You can no longer submit answers.");
+        }
       } else {
+        if (notYetOpen) {
+          toast.error(`This audit opens on ${new Date(startsAt!).toLocaleString()}`);
+          navigate({ to: "/assigned" });
+          return;
+        }
+        if (closed) {
+          toast.error("This audit has closed.");
+          navigate({ to: "/assigned" });
+          return;
+        }
         // If this survey belongs to an open-enrollment group with no members yet,
         // claim it now: insert this user as the sole member of the group.
         const groupId = (s as any).assigned_group_id as string | null;
@@ -146,6 +167,9 @@ function FillSurvey() {
 
   const persist = async (opts: { submit?: boolean } = {}) => {
     if (!responseId) return;
+    if (survey?.ends_at && new Date(survey.ends_at).getTime() < Date.now() && !submitted) {
+      return toast.error("This audit has closed and can no longer be modified.");
+    }
     setSaving(true);
     const payload: any = { answers, progress };
     if (opts.submit) {
