@@ -57,7 +57,7 @@ function FillSurvey() {
     (async () => {
       const { data: s } = await supabase
         .from("surveys")
-        .select("title,description,schema,mode,pdf_path")
+        .select("title,description,schema,mode,pdf_path,assigned_group_id")
         .eq("id", id).single();
       if (!s) return;
       const sch = (s.schema as any) ?? { sections: [] };
@@ -78,6 +78,37 @@ function FillSurvey() {
         setAnswers((existing.answers as any) ?? {});
         setSubmitted(existing.submitted);
       } else {
+        // If this survey belongs to an open-enrollment group with no members yet,
+        // claim it now: insert this user as the sole member of the group.
+        const groupId = (s as any).assigned_group_id as string | null;
+        if (groupId) {
+          const { data: grp } = await supabase
+            .from("audit_groups")
+            .select("open_enrollment")
+            .eq("id", groupId)
+            .maybeSingle();
+          const { data: existingMembers } = await supabase
+            .from("audit_group_members")
+            .select("user_id")
+            .eq("group_id", groupId);
+          const isMember = !!existingMembers?.some((m) => m.user_id === user.id);
+          const isUnclaimed = (existingMembers?.length ?? 0) === 0;
+          if (!isMember && grp?.open_enrollment && isUnclaimed) {
+            const { error: claimErr } = await supabase
+              .from("audit_group_members")
+              .insert({ group_id: groupId, user_id: user.id });
+            if (claimErr) {
+              toast.error("Someone else just claimed this audit");
+              navigate({ to: "/assigned" });
+              return;
+            }
+            toast.success("You claimed this audit");
+          } else if (!isMember && grp?.open_enrollment && !isUnclaimed) {
+            toast.error("This audit has already been claimed by another member");
+            navigate({ to: "/assigned" });
+            return;
+          }
+        }
         const { data: created, error } = await supabase
           .from("survey_responses")
           .insert({ survey_id: id, user_id: user.id, answers: {}, progress: 0 })
@@ -86,7 +117,7 @@ function FillSurvey() {
         setResponseId(created.id);
       }
     })();
-  }, [id, user]);
+  }, [id, user, navigate]);
 
   const updateAnswer = (qid: string, v: any) => setAnswers({ ...answers, [qid]: v });
 

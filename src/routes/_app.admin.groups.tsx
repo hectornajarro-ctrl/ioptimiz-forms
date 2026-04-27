@@ -14,13 +14,14 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Users, Trash2 } from "lucide-react";
+import { Plus, Users, Trash2, UserPlus } from "lucide-react";
 
 interface GroupRow {
   id: string;
   name: string;
   description: string | null;
   lead_auditor_id: string;
+  open_enrollment: boolean;
   lead_name?: string | null;
   member_count?: number;
 }
@@ -48,13 +49,14 @@ function AdminGroups() {
   const [description, setDescription] = useState("");
   const [leadId, setLeadId] = useState("");
   const [memberIds, setMemberIds] = useState<Set<string>>(new Set());
+  const [openEnrollment, setOpenEnrollment] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !hasRole("admin")) navigate({ to: "/dashboard" });
   }, [authLoading, hasRole, navigate]);
 
   const load = async () => {
-    const { data: g } = await supabase.from("audit_groups").select("id,name,description,lead_auditor_id");
+    const { data: g } = await supabase.from("audit_groups").select("id,name,description,lead_auditor_id,open_enrollment");
     const { data: profiles } = await supabase.from("profiles").select("id,email,full_name");
     const { data: ur } = await supabase.from("user_roles").select("user_id,role");
     const { data: members } = await supabase.from("audit_group_members").select("group_id,user_id");
@@ -75,7 +77,7 @@ function AdminGroups() {
 
   const resetForm = () => {
     setEditing(null);
-    setName(""); setDescription(""); setLeadId(""); setMemberIds(new Set());
+    setName(""); setDescription(""); setLeadId(""); setMemberIds(new Set()); setOpenEnrollment(false);
   };
 
   const openEdit = async (g: GroupRow) => {
@@ -83,6 +85,7 @@ function AdminGroups() {
     setName(g.name);
     setDescription(g.description ?? "");
     setLeadId(g.lead_auditor_id);
+    setOpenEnrollment(!!g.open_enrollment);
     const { data } = await supabase.from("audit_group_members").select("user_id").eq("group_id", g.id);
     setMemberIds(new Set(data?.map((d) => d.user_id) ?? []));
     setOpen(true);
@@ -95,23 +98,25 @@ function AdminGroups() {
     if (editing) {
       const { error } = await supabase
         .from("audit_groups")
-        .update({ name: name.trim(), description: description.trim() || null, lead_auditor_id: leadId })
+        .update({ name: name.trim(), description: description.trim() || null, lead_auditor_id: leadId, open_enrollment: openEnrollment })
         .eq("id", editing.id);
       if (error) return toast.error(error.message);
     } else {
       const { data, error } = await supabase
         .from("audit_groups")
-        .insert({ name: name.trim(), description: description.trim() || null, lead_auditor_id: leadId, created_by: user.id })
+        .insert({ name: name.trim(), description: description.trim() || null, lead_auditor_id: leadId, created_by: user.id, open_enrollment: openEnrollment })
         .select("id").single();
       if (error) return toast.error(error.message);
       groupId = data.id;
     }
     if (groupId) {
       await supabase.from("audit_group_members").delete().eq("group_id", groupId);
-      const inserts = Array.from(memberIds).map((uid) => ({ group_id: groupId!, user_id: uid }));
-      if (inserts.length > 0) {
-        const { error } = await supabase.from("audit_group_members").insert(inserts);
-        if (error) return toast.error(error.message);
+      if (!openEnrollment) {
+        const inserts = Array.from(memberIds).map((uid) => ({ group_id: groupId!, user_id: uid }));
+        if (inserts.length > 0) {
+          const { error } = await supabase.from("audit_group_members").insert(inserts);
+          if (error) return toast.error(error.message);
+        }
       }
     }
     toast.success(editing ? "Group updated" : "Group created");
@@ -167,14 +172,28 @@ function AdminGroups() {
                   </SelectContent>
                 </Select>
               </div>
+              <label className="flex items-start gap-3 rounded-md border p-3 cursor-pointer hover:bg-muted/50">
+                <Checkbox
+                  checked={openEnrollment}
+                  onCheckedChange={(c) => setOpenEnrollment(c === true)}
+                  className="mt-0.5"
+                />
+                <div className="text-sm">
+                  <div className="font-medium flex items-center gap-1.5"><UserPlus className="h-4 w-4" /> Open enrollment (no designated members)</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Any member auditor can pick an assigned survey from this group. The first one to take it becomes the sole member — no one else can take it after that.
+                  </div>
+                </div>
+              </label>
               <div className="space-y-1.5">
-                <Label>Members</Label>
+                <Label>Members {openEnrollment && <span className="text-xs text-muted-foreground font-normal">(disabled — open enrollment)</span>}</Label>
                 <div className="border rounded-md max-h-48 overflow-y-auto divide-y">
                   {memberOptions.length === 0 && <div className="px-3 py-3 text-sm text-muted-foreground">No member auditors yet.</div>}
                   {memberOptions.map((u) => (
                     <label key={u.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted">
                       <Checkbox
                         checked={memberIds.has(u.id)}
+                        disabled={openEnrollment}
                         onCheckedChange={(c) => {
                           const next = new Set(memberIds);
                           if (c === true) next.add(u.id); else next.delete(u.id);
@@ -207,6 +226,11 @@ function AdminGroups() {
               <div>
                 <div className="font-semibold tracking-tight">{g.name}</div>
                 <div className="text-xs text-muted-foreground mt-1">Lead: {g.lead_name}</div>
+                {g.open_enrollment && (
+                  <div className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">
+                    <UserPlus className="h-3 w-3" /> Open enrollment
+                  </div>
+                )}
               </div>
               <button onClick={() => remove(g.id)} className="text-muted-foreground hover:text-destructive">
                 <Trash2 className="h-4 w-4" />
@@ -215,7 +239,10 @@ function AdminGroups() {
             {g.description && <p className="text-sm text-muted-foreground mt-3">{g.description}</p>}
             <div className="mt-4 flex items-center justify-between">
               <div className="text-xs text-muted-foreground flex items-center gap-1">
-                <Users className="h-3 w-3" /> {g.member_count} member{g.member_count === 1 ? "" : "s"}
+                <Users className="h-3 w-3" />
+                {g.open_enrollment
+                  ? (g.member_count === 0 ? "Unclaimed" : `Claimed by 1 member`)
+                  : `${g.member_count} member${g.member_count === 1 ? "" : "s"}`}
               </div>
               <Button variant="outline" size="sm" onClick={() => openEdit(g)}>Edit</Button>
             </div>

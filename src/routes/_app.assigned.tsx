@@ -2,7 +2,7 @@ import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-rout
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
-import { ClipboardList, CheckCircle2, Clock } from "lucide-react";
+import { ClipboardList, CheckCircle2, Clock, UserPlus } from "lucide-react";
 
 interface AssignedSurvey {
   id: string;
@@ -11,6 +11,7 @@ interface AssignedSurvey {
   approved_at: string | null;
   progress: number;
   submitted: boolean;
+  open: boolean;
 }
 
 export const Route = createFileRoute("/_app/assigned")({
@@ -28,20 +29,29 @@ function AssignedAudits() {
     (async () => {
       const { data: surveys } = await supabase
         .from("surveys")
-        .select("id,title,description,approved_at")
+        .select("id,title,description,approved_at,assigned_group_id")
         .eq("status", "approved")
         .order("approved_at", { ascending: false });
       const { data: responses } = await supabase
         .from("survey_responses")
         .select("survey_id,progress,submitted")
         .eq("user_id", user.id);
+      const groupIds = Array.from(new Set((surveys ?? []).map((s) => s.assigned_group_id).filter(Boolean))) as string[];
+      const { data: openGroups } = groupIds.length
+        ? await supabase.from("audit_groups").select("id,open_enrollment").in("id", groupIds)
+        : { data: [] as { id: string; open_enrollment: boolean }[] };
+      const openMap = new Map((openGroups ?? []).map((g) => [g.id, g.open_enrollment]));
       const map = new Map(responses?.map((r) => [r.survey_id, r]) ?? []);
       setRows((surveys ?? []).map((s) => {
         const r = map.get(s.id);
         return {
-          ...s,
+          id: s.id,
+          title: s.title,
+          description: s.description,
+          approved_at: s.approved_at,
           progress: Number(r?.progress ?? 0),
           submitted: !!r?.submitted,
+          open: !!openMap.get(s.assigned_group_id ?? ""),
         };
       }));
     })();
@@ -69,6 +79,8 @@ function AssignedAudits() {
                   <ClipboardList className="h-5 w-5 text-muted-foreground" />
                   {s.submitted ? (
                     <span className="inline-flex items-center gap-1 text-xs text-success"><CheckCircle2 className="h-3 w-3" /> Submitted</span>
+                  ) : s.open ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-accent font-medium"><UserPlus className="h-3 w-3" /> Open — claim it</span>
                   ) : (
                     <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock className="h-3 w-3" /> {Math.round(s.progress)}% done</span>
                   )}
