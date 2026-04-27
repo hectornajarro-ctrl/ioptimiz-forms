@@ -44,6 +44,8 @@ interface SurveyRow {
   schema: { sections: Section[] };
   assigned_group_id: string | null;
   lead_auditor_id: string;
+  starts_at: string | null;
+  ends_at: string | null;
 }
 
 const TYPE_LABELS: Record<FieldType, string> = {
@@ -77,12 +79,18 @@ function SurveyEditor() {
   const load = async () => {
     const { data, error } = await supabase
       .from("surveys")
-      .select("id,title,description,status,mode,pdf_path,schema,assigned_group_id,lead_auditor_id")
+      .select("id,title,description,status,mode,pdf_path,schema,assigned_group_id,lead_auditor_id,starts_at,ends_at")
       .eq("id", id)
       .single();
     if (error) { toast.error(error.message); return; }
     const sch = (data.schema as any) ?? { sections: [] };
-    setSurvey({ ...data, mode: (data as any).mode ?? "free", schema: { sections: sch.sections ?? [] } } as SurveyRow);
+    setSurvey({
+      ...data,
+      mode: (data as any).mode ?? "free",
+      schema: { sections: sch.sections ?? [] },
+      starts_at: (data as any).starts_at ?? null,
+      ends_at: (data as any).ends_at ?? null,
+    } as SurveyRow);
 
     // Admins can assign to ANY group; lead auditors can only assign to groups they lead
     const groupQuery = hasRole("admin")
@@ -110,6 +118,9 @@ function SurveyEditor() {
   const updateSchema = (sections: Section[]) => setSurvey({ ...survey, schema: { sections } });
 
   const persist = async () => {
+    if (survey.starts_at && survey.ends_at && new Date(survey.ends_at) <= new Date(survey.starts_at)) {
+      return toast.error("End date must be after start date");
+    }
     setSaving(true);
     const { error } = await supabase
       .from("surveys")
@@ -119,10 +130,17 @@ function SurveyEditor() {
         mode: survey.mode,
         schema: survey.schema as any,
         assigned_group_id: survey.assigned_group_id,
+        starts_at: survey.starts_at,
+        ends_at: survey.ends_at,
       })
       .eq("id", survey.id);
     setSaving(false);
-    if (error) return toast.error(error.message);
+    if (error) {
+      if ((error as { code?: string }).code === "23505") {
+        return toast.error("Another survey of yours already uses this title");
+      }
+      return toast.error(error.message);
+    }
     toast.success("Saved");
   };
 
