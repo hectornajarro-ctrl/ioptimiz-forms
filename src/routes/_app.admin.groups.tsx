@@ -233,12 +233,14 @@ function AdminGroups() {
       </div>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {groups.length === 0 && (
+        {visibleGroups.length === 0 && (
           <div className="col-span-full text-center text-muted-foreground py-12 border border-dashed rounded-lg">
             No groups yet. Create your first audit group to get started.
           </div>
         )}
-        {groups.map((g) => (
+        {visibleGroups.map((g) => {
+          const canManage = isAdmin || g.lead_auditor_id === user?.id;
+          return (
           <div key={g.id} className="rounded-lg border border-border bg-card p-5" style={{ boxShadow: "var(--shadow-card)" }}>
             <div className="flex items-start justify-between">
               <div>
@@ -250,9 +252,11 @@ function AdminGroups() {
                   </div>
                 )}
               </div>
-              <button onClick={() => remove(g.id)} className="text-muted-foreground hover:text-destructive">
-                <Trash2 className="h-4 w-4" />
-              </button>
+              {canManage && (
+                <button onClick={() => remove(g.id)} className="text-muted-foreground hover:text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
             </div>
             {g.description && <p className="text-sm text-muted-foreground mt-3">{g.description}</p>}
             <div className="mt-4 flex items-center justify-between">
@@ -262,10 +266,11 @@ function AdminGroups() {
                   ? (g.member_count === 0 ? "Unclaimed" : `Claimed by 1 member`)
                   : `${g.member_count} member${g.member_count === 1 ? "" : "s"}`}
               </div>
-              <Button variant="outline" size="sm" onClick={() => openEdit(g)}>Edit</Button>
+              {canManage && <Button variant="outline" size="sm" onClick={() => openEdit(g)}>Edit</Button>}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
