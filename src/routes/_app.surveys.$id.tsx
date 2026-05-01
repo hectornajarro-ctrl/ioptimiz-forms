@@ -179,7 +179,6 @@ function SurveyEditor() {
       ends_at: (data as any).ends_at ?? null,
     } as SurveyRow);
 
-    // Admins can assign to ANY group; lead auditors can only assign to groups they lead.
     const groupQuery = hasRole("admin")
       ? supabase.from("audit_groups").select("id,name").order("name")
       : supabase
@@ -206,7 +205,6 @@ function SurveyEditor() {
     return <div className="p-6 text-muted-foreground">Loading…</div>;
   }
 
-  // Admins can edit/manage any survey; lead auditors only their own.
   const isOwner = user?.id === survey.lead_auditor_id || hasRole("admin");
   const isDraft = survey.status === "draft";
 
@@ -387,7 +385,6 @@ function SurveyEditor() {
     }
   };
 
-  // Schema editing helpers.
   const addSection = () =>
     updateSchema([
       ...survey.schema.sections,
@@ -527,7 +524,6 @@ function SurveyEditor() {
         </div>
       </div>
 
-      {/* Meta */}
       <div
         className="rounded-lg border bg-card p-6 mb-6"
         style={{ boxShadow: "var(--shadow-card)" }}
@@ -658,7 +654,6 @@ function SurveyEditor() {
         </div>
       </div>
 
-      {/* PDF & AI */}
       {isDraft && (
         <div
           className="rounded-lg border bg-card p-6 mb-6"
@@ -710,7 +705,6 @@ function SurveyEditor() {
         </div>
       )}
 
-      {/* Sections / questions */}
       <div className="space-y-5">
         {survey.schema.sections.map((sec) => (
           <div
