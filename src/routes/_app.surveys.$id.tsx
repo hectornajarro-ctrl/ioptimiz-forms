@@ -1,4 +1,10 @@
-import { createFileRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
@@ -8,16 +14,58 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
-import { Upload, Sparkles, Plus, Trash2, ArrowLeft, BarChart3, CheckCircle2, Download } from "lucide-react";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
-  AlertDialogTitle, AlertDialogTrigger,
+  Upload,
+  Sparkles,
+  Plus,
+  Trash2,
+  ArrowLeft,
+  BarChart3,
+  CheckCircle2,
+  Download,
+} from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-type FieldType = "text" | "textarea" | "yes_no" | "multiple_choice" | "rating" | "file";
+type FieldType =
+  | "text"
+  | "textarea"
+  | "yes_no"
+  | "multiple_choice"
+  | "rating"
+  | "file";
+
+interface AuditReference {
+  source_title?: string;
+  section?: string;
+  page?: string;
+  requirement?: string;
+  source_text?: string;
+}
+
+interface AuditRisk {
+  title?: string;
+  description?: string;
+  category?: string;
+  severity?: "Low" | "Medium" | "High" | "Critical" | string;
+  likelihood?: "Low" | "Medium" | "High" | string;
+  impact?: "Low" | "Medium" | "High" | string;
+}
 
 interface Question {
   id: string;
@@ -26,6 +74,10 @@ interface Question {
   required: boolean;
   options: string[];
   scale_max: number;
+  reference?: AuditReference;
+  risk?: AuditRisk;
+  recommended_actions?: string[];
+  expected_evidence?: string[];
 }
 
 interface Section {
@@ -59,22 +111,34 @@ const TYPE_LABELS: Record<FieldType, string> = {
 
 export const Route = createFileRoute("/_app/surveys/$id")({
   component: SurveyEditor,
-  head: () => ({ meta: [{ title: "Survey editor — AuditFlow" }] }),
+  head: () => ({
+    meta: [{ title: "Survey editor — AuditFlow" }],
+  }),
 });
 
-function uid() { return Math.random().toString(36).slice(2, 10); }
+function uid() {
+  return Math.random().toString(36).slice(2, 10);
+}
 
-// Convert ISO string ↔ value for <input type="datetime-local"> (in user's local zone)
+// Convert ISO string ↔ value for datetime-local input in user's local zone.
 function toLocalInput(iso: string | null): string {
   if (!iso) return "";
+
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
+
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+    d.getDate()
+  )}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+
 function fromLocalInput(v: string): string | null {
   if (!v) return null;
+
   const d = new Date(v);
+
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
 
@@ -83,6 +147,7 @@ function SurveyEditor() {
   const { user, session, hasRole } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
   const [survey, setSurvey] = useState<SurveyRow | null>(null);
   const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
   const [extracting, setExtracting] = useState(false);
@@ -93,49 +158,75 @@ function SurveyEditor() {
   const load = async () => {
     const { data, error } = await supabase
       .from("surveys")
-      .select("id,title,description,status,mode,pdf_path,schema,assigned_group_id,lead_auditor_id,starts_at,ends_at")
+      .select(
+        "id,title,description,status,mode,pdf_path,schema,assigned_group_id,lead_auditor_id,starts_at,ends_at"
+      )
       .eq("id", id)
       .single();
-    if (error) { toast.error(error.message); return; }
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
     const sch = (data.schema as any) ?? { sections: [] };
+
     setSurvey({
       ...data,
-      mode: (data as any).mode ?? "free",
+      mode: ((data as any).mode ?? "free") as "free" | "compliance",
       schema: { sections: sch.sections ?? [] },
       starts_at: (data as any).starts_at ?? null,
       ends_at: (data as any).ends_at ?? null,
     } as SurveyRow);
 
-    // Admins can assign to ANY group; lead auditors can only assign to groups they lead
+    // Admins can assign to ANY group; lead auditors can only assign to groups they lead.
     const groupQuery = hasRole("admin")
       ? supabase.from("audit_groups").select("id,name").order("name")
-      : supabase.from("audit_groups").select("id,name").eq("lead_auditor_id", data.lead_auditor_id).order("name");
+      : supabase
+          .from("audit_groups")
+          .select("id,name")
+          .eq("lead_auditor_id", data.lead_auditor_id)
+          .order("name");
+
     const { data: g } = await groupQuery;
+
     setGroups(g ?? []);
   };
 
-  useEffect(() => { if (user) load(); }, [id, user]);
+  useEffect(() => {
+    if (user) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, user]);
 
   if (location.pathname.endsWith("/progress")) {
     return <Outlet />;
   }
 
   if (!survey) {
-    return <div className="p-8 text-muted-foreground">Loading…</div>;
+    return <div className="p-6 text-muted-foreground">Loading…</div>;
   }
 
-  // Admins can edit/manage any survey; lead auditors only their own
+  // Admins can edit/manage any survey; lead auditors only their own.
   const isOwner = user?.id === survey.lead_auditor_id || hasRole("admin");
   const isDraft = survey.status === "draft";
 
-  const updateField = (patch: Partial<SurveyRow>) => setSurvey({ ...survey, ...patch });
-  const updateSchema = (sections: Section[]) => setSurvey({ ...survey, schema: { sections } });
+  const updateField = (patch: Partial<SurveyRow>) =>
+    setSurvey({ ...survey, ...patch });
+
+  const updateSchema = (sections: Section[]) =>
+    setSurvey({ ...survey, schema: { sections } });
 
   const persist = async () => {
-    if (survey.starts_at && survey.ends_at && new Date(survey.ends_at) <= new Date(survey.starts_at)) {
+    if (
+      survey.starts_at &&
+      survey.ends_at &&
+      new Date(survey.ends_at) <= new Date(survey.starts_at)
+    ) {
       return toast.error("End date must be after start date");
     }
+
     setSaving(true);
+
     const { error } = await supabase
       .from("surveys")
       .update({
@@ -148,41 +239,72 @@ function SurveyEditor() {
         ends_at: survey.ends_at,
       })
       .eq("id", survey.id);
+
     setSaving(false);
+
     if (error) {
       if ((error as { code?: string }).code === "23505") {
         return toast.error("Another survey of yours already uses this title");
       }
+
       return toast.error(error.message);
     }
+
     toast.success("Saved");
   };
 
   const onUpload = async (file: File) => {
     if (!user) return;
-    if (file.type !== "application/pdf") return toast.error("Please upload a PDF file");
-    if (file.size > 15 * 1024 * 1024) return toast.error("File too large (max 15 MB)");
+
+    if (file.type !== "application/pdf") {
+      return toast.error("Please upload a PDF file");
+    }
+
+    if (file.size > 15 * 1024 * 1024) {
+      return toast.error("File too large (max 15 MB)");
+    }
+
     setUploading(true);
+
     const path = `${user.id}/${survey.id}/${Date.now()}-${file.name}`;
-    const { error } = await supabase.storage.from("survey-pdfs").upload(path, file, { upsert: false, contentType: "application/pdf" });
-    if (error) { setUploading(false); return toast.error(error.message); }
+
+    const { error } = await supabase.storage
+      .from("survey-pdfs")
+      .upload(path, file, {
+        upsert: false,
+        contentType: "application/pdf",
+      });
+
+    if (error) {
+      setUploading(false);
+      return toast.error(error.message);
+    }
+
     await supabase.from("surveys").update({ pdf_path: path }).eq("id", survey.id);
+
     setUploading(false);
+
     toast.success("PDF uploaded");
+
     await load();
   };
 
   const runExtract = async () => {
     if (!survey.pdf_path) return toast.error("Upload a PDF first");
     if (!session) return;
+
     setExtracting(true);
+
     try {
       const { data, error } = await supabase.functions.invoke("extract-survey", {
         body: { surveyId: survey.id },
       });
+
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
+
       toast.success(`Extracted ${data.sections} section(s)`);
+
       await load();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Extraction failed";
@@ -193,36 +315,68 @@ function SurveyEditor() {
   };
 
   const approve = async () => {
-    if (!survey.assigned_group_id) return toast.error("Assign a group first");
-    if (survey.schema.sections.length === 0) return toast.error("Add at least one question");
+    if (!survey.assigned_group_id) {
+      return toast.error("Assign a group first");
+    }
+
+    if (survey.schema.sections.length === 0) {
+      return toast.error("Add at least one question");
+    }
+
     await persist();
+
     const { error } = await supabase
       .from("surveys")
-      .update({ status: "approved", approved_at: new Date().toISOString() })
+      .update({
+        status: "approved",
+        approved_at: new Date().toISOString(),
+      })
       .eq("id", survey.id);
+
     if (error) return toast.error(error.message);
+
     toast.success("Survey approved & assigned");
+
     await load();
   };
 
   const reopen = async () => {
-    const { error } = await supabase.from("surveys").update({ status: "draft", approved_at: null }).eq("id", survey.id);
+    const { error } = await supabase
+      .from("surveys")
+      .update({
+        status: "draft",
+        approved_at: null,
+      })
+      .eq("id", survey.id);
+
     if (error) return toast.error(error.message);
+
     toast.success("Survey reopened as draft");
+
     await load();
   };
 
   const deleteSurvey = async () => {
     const { error } = await supabase.from("surveys").delete().eq("id", survey.id);
+
     if (error) return toast.error(error.message);
+
     toast.success("Draft deleted");
+
     navigate({ to: "/surveys" });
   };
 
   const exportCombined = async () => {
     setExporting(true);
+
     try {
-      const { data, error } = await supabase.functions.invoke("export-survey-pdf", { body: { surveyId: survey.id } });
+      const { data, error } = await supabase.functions.invoke(
+        "export-survey-pdf",
+        {
+          body: { surveyId: survey.id },
+        }
+      );
+
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       if (data?.url) window.open(data.url, "_blank");
@@ -233,65 +387,130 @@ function SurveyEditor() {
     }
   };
 
-  // Schema editing helpers
-  const addSection = () => updateSchema([...survey.schema.sections, { id: uid(), title: "New section", questions: [] }]);
-  const removeSection = (sid: string) => updateSchema(survey.schema.sections.filter((s) => s.id !== sid));
+  // Schema editing helpers.
+  const addSection = () =>
+    updateSchema([
+      ...survey.schema.sections,
+      {
+        id: uid(),
+        title: "New section",
+        questions: [],
+      },
+    ]);
+
+  const removeSection = (sid: string) =>
+    updateSchema(survey.schema.sections.filter((s) => s.id !== sid));
+
   const editSection = (sid: string, patch: Partial<Section>) =>
-    updateSchema(survey.schema.sections.map((s) => (s.id === sid ? { ...s, ...patch } : s)));
-  const addQuestion = (sid: string) => editSection(sid, {
-    questions: [
-      ...(survey.schema.sections.find((s) => s.id === sid)?.questions ?? []),
-      { id: uid(), label: "New question", type: "text", required: false, options: [], scale_max: 5 },
-    ],
-  });
-  const editQuestion = (sid: string, qid: string, patch: Partial<Question>) => {
+    updateSchema(
+      survey.schema.sections.map((s) => (s.id === sid ? { ...s, ...patch } : s))
+    );
+
+  const addQuestion = (sid: string) =>
+    editSection(sid, {
+      questions: [
+        ...(survey.schema.sections.find((s) => s.id === sid)?.questions ?? []),
+        {
+          id: uid(),
+          label: "New question",
+          type: survey.mode === "compliance" ? "yes_no" : "text",
+          required: survey.mode === "compliance",
+          options: [],
+          scale_max: 5,
+          reference: {},
+          risk: {},
+          recommended_actions: [],
+          expected_evidence: [],
+        },
+      ],
+    });
+
+  const editQuestion = (
+    sid: string,
+    qid: string,
+    patch: Partial<Question>
+  ) => {
     const sec = survey.schema.sections.find((s) => s.id === sid);
+
     if (!sec) return;
-    editSection(sid, { questions: sec.questions.map((q) => (q.id === qid ? { ...q, ...patch } : q)) });
+
+    editSection(sid, {
+      questions: sec.questions.map((q) =>
+        q.id === qid ? { ...q, ...patch } : q
+      ),
+    });
   };
+
   const removeQuestion = (sid: string, qid: string) => {
     const sec = survey.schema.sections.find((s) => s.id === sid);
+
     if (!sec) return;
-    editSection(sid, { questions: sec.questions.filter((q) => q.id !== qid) });
+
+    editSection(sid, {
+      questions: sec.questions.filter((q) => q.id !== qid),
+    });
   };
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <Link to="/surveys" className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-          <ArrowLeft className="h-4 w-4" /> Back to surveys
-        </Link>
-        <div className="flex items-center gap-2">
+    <div className="container mx-auto max-w-5xl py-8">
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <Button variant="ghost" size="sm" asChild>
+          <Link to="/surveys">
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Back to surveys
+          </Link>
+        </Button>
+
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           {survey.status === "approved" && (
-            <Link to="/surveys/$id/progress" params={{ id: survey.id }}>
-              <Button variant="outline"><BarChart3 className="h-4 w-4 mr-2" /> View progress</Button>
-            </Link>
-          )}
-          {survey.status === "approved" && isOwner && (
-            <Button variant="outline" onClick={exportCombined} disabled={exporting}>
-              <Download className="h-4 w-4 mr-2" /> {exporting ? "Generating…" : "Export report"}
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/surveys/$id/progress" params={{ id: survey.id }}>
+                <BarChart3 className="h-4 w-4 mr-1" />
+                View progress
+              </Link>
             </Button>
           )}
+
+          {survey.status === "approved" && isOwner && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportCombined}
+              disabled={exporting}
+            >
+              <Download className="h-4 w-4 mr-1" />
+              {exporting ? "Generating…" : "Export report"}
+            </Button>
+          )}
+
           {isDraft && isOwner && (
             <>
-              <Button variant="outline" onClick={persist} disabled={saving}>{saving ? "Saving…" : "Save draft"}</Button>
-              <Button onClick={approve}><CheckCircle2 className="h-4 w-4 mr-2" /> Approve & assign</Button>
+              <Button variant="outline" onClick={persist} disabled={saving}>
+                {saving ? "Saving…" : "Save draft"}
+              </Button>
+
+              <Button onClick={approve}>
+                <CheckCircle2 className="h-4 w-4 mr-1" />
+                Approve & assign
+              </Button>
+
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="outline" className="text-destructive hover:text-destructive">
-                    <Trash2 className="h-4 w-4 mr-2" /> Delete
-                  </Button>
+                  <Button variant="destructive">Delete</Button>
                 </AlertDialogTrigger>
+
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete this draft?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      "{survey.title}" will be permanently deleted. This cannot be undone.
+                      "{survey.title}" will be permanently deleted. This cannot
+                      be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
+
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={deleteSurvey} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                    <AlertDialogAction onClick={deleteSurvey}>
                       Delete
                     </AlertDialogAction>
                   </AlertDialogFooter>
@@ -299,42 +518,78 @@ function SurveyEditor() {
               </AlertDialog>
             </>
           )}
+
           {!isDraft && isOwner && (
-            <Button variant="outline" onClick={reopen}>Reopen as draft</Button>
+            <Button variant="outline" onClick={reopen}>
+              Reopen as draft
+            </Button>
           )}
         </div>
       </div>
 
       {/* Meta */}
-      <div className="rounded-lg border bg-card p-6 mb-6" style={{ boxShadow: "var(--shadow-card)" }}>
+      <div
+        className="rounded-lg border bg-card p-6 mb-6"
+        style={{ boxShadow: "var(--shadow-card)" }}
+      >
         <div className="grid gap-4">
           <div className="space-y-1.5">
             <Label>Title</Label>
-            <Input value={survey.title} onChange={(e) => updateField({ title: e.target.value })} disabled={!isDraft} maxLength={200} />
+            <Input
+              value={survey.title}
+              onChange={(e) => updateField({ title: e.target.value })}
+              disabled={!isDraft}
+              maxLength={200}
+            />
           </div>
+
           <div className="space-y-1.5">
             <Label>Description</Label>
-            <Textarea value={survey.description ?? ""} onChange={(e) => updateField({ description: e.target.value })} disabled={!isDraft} maxLength={500} />
+            <Textarea
+              value={survey.description ?? ""}
+              onChange={(e) => updateField({ description: e.target.value })}
+              disabled={!isDraft}
+              maxLength={500}
+            />
           </div>
+
           <div className="space-y-1.5">
             <Label>Survey mode</Label>
             <Select
               value={survey.mode}
-              onValueChange={(v) => updateField({ mode: v as "free" | "compliance" })}
+              onValueChange={(v) =>
+                updateField({ mode: v as "free" | "compliance" })
+              }
               disabled={!isDraft}
             >
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
-                <SelectItem value="free">Free Mode — mixed question types (text, ratings, choice…)</SelectItem>
-                <SelectItem value="compliance">Compliance Mode — Yes/No with comments &amp; photo evidence</SelectItem>
+                <SelectItem value="free">
+                  Free Mode — mixed question types text, ratings, choice…
+                </SelectItem>
+                <SelectItem value="compliance">
+                  Compliance Mode — Yes/No with comments & photo evidence
+                </SelectItem>
               </SelectContent>
             </Select>
+
             <p className="text-xs text-muted-foreground">
-              {survey.mode === "compliance"
-                ? "AI extraction will turn every item into a Yes / No / N/A check. Members can add a comment and upload photo evidence per item."
-                : "Choose any question type per item. Photo / file uploads only on questions you mark as 'File / Photo'."}
+              {survey.mode === "compliance" ? (
+                <>
+                  AI extraction will turn every item into a Yes / No / N/A check.
+                  Members can add a comment and upload photo evidence per item.
+                </>
+              ) : (
+                <>
+                  Choose any question type per item. Photo / file uploads only on
+                  questions you mark as 'File / Photo'.
+                </>
+              )}
             </p>
           </div>
+
           <div className="space-y-1.5">
             <Label>Assign to group</Label>
             <Select
@@ -342,33 +597,62 @@ function SurveyEditor() {
               onValueChange={(v) => updateField({ assigned_group_id: v || null })}
               disabled={!isDraft}
             >
-              <SelectTrigger><SelectValue placeholder={groups.length ? "Select a group" : "You don't lead any groups yet"} /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={
+                    groups.length ? "Select a group" : "You don't lead any groups yet"
+                  }
+                />
+              </SelectTrigger>
+
               <SelectContent>
-                {groups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+                {groups.map((g) => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
+
           <div className="grid sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>Available from <span className="text-xs text-muted-foreground font-normal">(optional)</span></Label>
+              <Label>
+                Available from{" "}
+                <span className="text-xs text-muted-foreground font-normal">
+                  optional
+                </span>
+              </Label>
               <Input
                 type="datetime-local"
                 value={toLocalInput(survey.starts_at)}
-                onChange={(e) => updateField({ starts_at: fromLocalInput(e.target.value) })}
+                onChange={(e) =>
+                  updateField({ starts_at: fromLocalInput(e.target.value) })
+                }
                 disabled={!isDraft}
               />
             </div>
+
             <div className="space-y-1.5">
-              <Label>Available until <span className="text-xs text-muted-foreground font-normal">(optional)</span></Label>
+              <Label>
+                Available until{" "}
+                <span className="text-xs text-muted-foreground font-normal">
+                  optional
+                </span>
+              </Label>
               <Input
                 type="datetime-local"
                 value={toLocalInput(survey.ends_at)}
-                onChange={(e) => updateField({ ends_at: fromLocalInput(e.target.value) })}
+                onChange={(e) =>
+                  updateField({ ends_at: fromLocalInput(e.target.value) })
+                }
                 disabled={!isDraft}
               />
             </div>
+
             <p className="text-xs text-muted-foreground sm:col-span-2 -mt-1">
-              Members can only fill out this survey within this window. Leave empty for no time limit.
+              Members can only fill out this survey within this window. Leave
+              empty for no time limit.
             </p>
           </div>
         </div>
@@ -376,21 +660,51 @@ function SurveyEditor() {
 
       {/* PDF & AI */}
       {isDraft && (
-        <div className="rounded-lg border bg-card p-6 mb-6" style={{ boxShadow: "var(--shadow-card)" }}>
+        <div
+          className="rounded-lg border bg-card p-6 mb-6"
+          style={{ boxShadow: "var(--shadow-card)" }}
+        >
           <h2 className="font-semibold tracking-tight mb-1">Source PDF</h2>
-          <p className="text-sm text-muted-foreground mb-4">Upload a PDF survey, then let AI extract the form structure.</p>
+
+          <p className="text-sm text-muted-foreground mb-4">
+            Upload a PDF checklist, regulation, standard or policy. In Compliance
+            Mode, AI will generate audit questions, normative references, risks,
+            recommended actions and expected evidence.
+          </p>
+
           <div className="flex flex-wrap items-center gap-3">
             <label className="cursor-pointer">
-              <input type="file" accept="application/pdf" className="hidden" onChange={(e) => e.target.files?.[0] && onUpload(e.target.files[0])} />
+              <input
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={(e) =>
+                  e.target.files?.[0] && onUpload(e.target.files[0])
+                }
+              />
+
               <span className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
-                <Upload className="h-4 w-4" /> {uploading ? "Uploading…" : survey.pdf_path ? "Replace PDF" : "Upload PDF"}
+                <Upload className="h-4 w-4" />
+                {uploading
+                  ? "Uploading…"
+                  : survey.pdf_path
+                    ? "Replace PDF"
+                    : "Upload PDF"}
               </span>
             </label>
+
             {survey.pdf_path && (
-              <span className="text-xs text-muted-foreground truncate max-w-xs">{survey.pdf_path.split("/").pop()}</span>
+              <span className="text-xs text-muted-foreground truncate max-w-xs">
+                {survey.pdf_path.split("/").pop()}
+              </span>
             )}
-            <Button onClick={runExtract} disabled={!survey.pdf_path || extracting}>
-              <Sparkles className="h-4 w-4 mr-2" /> {extracting ? "Extracting with AI…" : "Extract with AI"}
+
+            <Button
+              onClick={runExtract}
+              disabled={!survey.pdf_path || extracting}
+            >
+              <Sparkles className="h-4 w-4 mr-2" />
+              {extracting ? "Extracting with AI…" : "Extract with AI"}
             </Button>
           </div>
         </div>
@@ -399,17 +713,29 @@ function SurveyEditor() {
       {/* Sections / questions */}
       <div className="space-y-5">
         {survey.schema.sections.map((sec) => (
-          <div key={sec.id} className="rounded-lg border bg-card p-5" style={{ boxShadow: "var(--shadow-card)" }}>
+          <div
+            key={sec.id}
+            className="rounded-lg border bg-card p-5"
+            style={{ boxShadow: "var(--shadow-card)" }}
+          >
             <div className="flex items-start gap-3 mb-4">
               <Input
                 value={sec.title}
-                onChange={(e) => editSection(sec.id, { title: e.target.value })}
+                onChange={(e) =>
+                  editSection(sec.id, { title: e.target.value })
+                }
                 disabled={!isDraft}
                 className="font-semibold text-base"
                 maxLength={200}
               />
+
               {isDraft && (
-                <Button variant="ghost" size="icon" onClick={() => removeSection(sec.id)} className="text-muted-foreground hover:text-destructive">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removeSection(sec.id)}
+                  className="text-muted-foreground hover:text-destructive"
+                >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               )}
@@ -419,37 +745,60 @@ function SurveyEditor() {
               {sec.questions.map((q, idx) => (
                 <div key={q.id} className="rounded-md border bg-background p-3">
                   <div className="flex items-start gap-2">
-                    <span className="text-xs text-muted-foreground mt-2 w-6 shrink-0">{idx + 1}.</span>
+                    <span className="text-xs text-muted-foreground mt-2 w-6 shrink-0">
+                      {idx + 1}.
+                    </span>
+
                     <div className="flex-1 grid gap-2">
                       <Input
                         value={q.label}
-                        onChange={(e) => editQuestion(sec.id, q.id, { label: e.target.value })}
+                        onChange={(e) =>
+                          editQuestion(sec.id, q.id, {
+                            label: e.target.value,
+                          })
+                        }
                         disabled={!isDraft}
                         placeholder="Question"
                         maxLength={500}
                       />
+
                       <div className="flex flex-wrap items-center gap-2">
                         <Select
                           value={q.type}
-                          onValueChange={(v) => editQuestion(sec.id, q.id, { type: v as FieldType })}
+                          onValueChange={(v) =>
+                            editQuestion(sec.id, q.id, {
+                              type: v as FieldType,
+                            })
+                          }
                           disabled={!isDraft}
                         >
-                          <SelectTrigger className="w-44 h-9"><SelectValue /></SelectTrigger>
+                          <SelectTrigger className="w-44 h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+
                           <SelectContent>
                             {Object.entries(TYPE_LABELS).map(([v, l]) => (
-                              <SelectItem key={v} value={v}>{l}</SelectItem>
+                              <SelectItem key={v} value={v}>
+                                {l}
+                              </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
+
                         <label className="text-xs flex items-center gap-1.5">
                           <input
                             type="checkbox"
                             checked={q.required}
                             disabled={!isDraft}
-                            onChange={(e) => editQuestion(sec.id, q.id, { required: e.target.checked })}
+                            onChange={(e) =>
+                              editQuestion(sec.id, q.id, {
+                                required: e.target.checked,
+                              })
+                            }
                           />
                           Required
                         </label>
+
                         {q.type === "rating" && (
                           <div className="text-xs flex items-center gap-1.5">
                             Scale max:
@@ -460,32 +809,318 @@ function SurveyEditor() {
                               min={2}
                               max={10}
                               disabled={!isDraft}
-                              onChange={(e) => editQuestion(sec.id, q.id, { scale_max: Math.max(2, Math.min(10, Number(e.target.value) || 5)) })}
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  scale_max: Math.max(
+                                    2,
+                                    Math.min(10, Number(e.target.value) || 5)
+                                  ),
+                                })
+                              }
                             />
                           </div>
                         )}
+
                         {isDraft && (
-                          <Button variant="ghost" size="icon" onClick={() => removeQuestion(sec.id, q.id)} className="ml-auto text-muted-foreground hover:text-destructive h-8 w-8">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeQuestion(sec.id, q.id)}
+                            className="ml-auto text-muted-foreground hover:text-destructive h-8 w-8"
+                          >
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         )}
                       </div>
+
                       {q.type === "multiple_choice" && (
                         <Input
                           value={q.options.join(", ")}
-                          onChange={(e) => editQuestion(sec.id, q.id, { options: e.target.value.split(",").map((o) => o.trim()).filter(Boolean) })}
+                          onChange={(e) =>
+                            editQuestion(sec.id, q.id, {
+                              options: e.target.value
+                                .split(",")
+                                .map((o) => o.trim())
+                                .filter(Boolean),
+                            })
+                          }
                           disabled={!isDraft}
                           placeholder="Comma-separated options"
                           maxLength={500}
                         />
                       )}
+
+                      {survey.mode === "compliance" && (
+                        <div className="mt-3 rounded-md border bg-muted/30 p-3 space-y-3">
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                              Normative reference
+                            </p>
+
+                            <div className="grid sm:grid-cols-3 gap-2 mt-2">
+                              <Input
+                                value={q.reference?.source_title ?? ""}
+                                onChange={(e) =>
+                                  editQuestion(sec.id, q.id, {
+                                    reference: {
+                                      ...(q.reference ?? {}),
+                                      source_title: e.target.value,
+                                    },
+                                  })
+                                }
+                                disabled={!isDraft}
+                                placeholder="Document / standard"
+                                maxLength={200}
+                              />
+
+                              <Input
+                                value={q.reference?.section ?? ""}
+                                onChange={(e) =>
+                                  editQuestion(sec.id, q.id, {
+                                    reference: {
+                                      ...(q.reference ?? {}),
+                                      section: e.target.value,
+                                    },
+                                  })
+                                }
+                                disabled={!isDraft}
+                                placeholder="Section / article / clause"
+                                maxLength={120}
+                              />
+
+                              <Input
+                                value={q.reference?.page ?? ""}
+                                onChange={(e) =>
+                                  editQuestion(sec.id, q.id, {
+                                    reference: {
+                                      ...(q.reference ?? {}),
+                                      page: e.target.value,
+                                    },
+                                  })
+                                }
+                                disabled={!isDraft}
+                                placeholder="Page"
+                                maxLength={50}
+                              />
+                            </div>
+
+                            <Textarea
+                              className="mt-2"
+                              value={q.reference?.requirement ?? ""}
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  reference: {
+                                    ...(q.reference ?? {}),
+                                    requirement: e.target.value,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                              placeholder="Requirement summary"
+                              maxLength={1000}
+                              rows={2}
+                            />
+
+                            <Textarea
+                              className="mt-2"
+                              value={q.reference?.source_text ?? ""}
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  reference: {
+                                    ...(q.reference ?? {}),
+                                    source_text: e.target.value,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                              placeholder="Short source text / excerpt"
+                              maxLength={1500}
+                              rows={2}
+                            />
+                          </div>
+
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                              Risk if finding is detected
+                            </p>
+
+                            <div className="grid sm:grid-cols-2 gap-2 mt-2">
+                              <Input
+                                value={q.risk?.title ?? ""}
+                                onChange={(e) =>
+                                  editQuestion(sec.id, q.id, {
+                                    risk: {
+                                      ...(q.risk ?? {}),
+                                      title: e.target.value,
+                                    },
+                                  })
+                                }
+                                disabled={!isDraft}
+                                placeholder="Risk title"
+                                maxLength={200}
+                              />
+
+                              <Input
+                                value={q.risk?.category ?? ""}
+                                onChange={(e) =>
+                                  editQuestion(sec.id, q.id, {
+                                    risk: {
+                                      ...(q.risk ?? {}),
+                                      category: e.target.value,
+                                    },
+                                  })
+                                }
+                                disabled={!isDraft}
+                                placeholder="Category"
+                                maxLength={100}
+                              />
+                            </div>
+
+                            <div className="grid sm:grid-cols-3 gap-2 mt-2">
+                              <Select
+                                value={q.risk?.severity ?? ""}
+                                onValueChange={(v) =>
+                                  editQuestion(sec.id, q.id, {
+                                    risk: {
+                                      ...(q.risk ?? {}),
+                                      severity: v,
+                                    },
+                                  })
+                                }
+                                disabled={!isDraft}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Severity" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Low">Low</SelectItem>
+                                  <SelectItem value="Medium">Medium</SelectItem>
+                                  <SelectItem value="High">High</SelectItem>
+                                  <SelectItem value="Critical">
+                                    Critical
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+
+                              <Select
+                                value={q.risk?.likelihood ?? ""}
+                                onValueChange={(v) =>
+                                  editQuestion(sec.id, q.id, {
+                                    risk: {
+                                      ...(q.risk ?? {}),
+                                      likelihood: v,
+                                    },
+                                  })
+                                }
+                                disabled={!isDraft}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Likelihood" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Low">Low</SelectItem>
+                                  <SelectItem value="Medium">Medium</SelectItem>
+                                  <SelectItem value="High">High</SelectItem>
+                                </SelectContent>
+                              </Select>
+
+                              <Select
+                                value={q.risk?.impact ?? ""}
+                                onValueChange={(v) =>
+                                  editQuestion(sec.id, q.id, {
+                                    risk: {
+                                      ...(q.risk ?? {}),
+                                      impact: v,
+                                    },
+                                  })
+                                }
+                                disabled={!isDraft}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Impact" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Low">Low</SelectItem>
+                                  <SelectItem value="Medium">Medium</SelectItem>
+                                  <SelectItem value="High">High</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <Textarea
+                              className="mt-2"
+                              value={q.risk?.description ?? ""}
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  risk: {
+                                    ...(q.risk ?? {}),
+                                    description: e.target.value,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                              placeholder="Risk description"
+                              maxLength={1500}
+                              rows={2}
+                            />
+                          </div>
+
+                          <div className="grid sm:grid-cols-2 gap-3">
+                            <div>
+                              <Label className="text-xs">
+                                Recommended actions
+                              </Label>
+                              <Textarea
+                                value={(q.recommended_actions ?? []).join("\n")}
+                                onChange={(e) =>
+                                  editQuestion(sec.id, q.id, {
+                                    recommended_actions: e.target.value
+                                      .split("\n")
+                                      .map((x) => x.trim())
+                                      .filter(Boolean),
+                                  })
+                                }
+                                disabled={!isDraft}
+                                placeholder="One action per line"
+                                rows={4}
+                              />
+                            </div>
+
+                            <div>
+                              <Label className="text-xs">
+                                Expected evidence
+                              </Label>
+                              <Textarea
+                                value={(q.expected_evidence ?? []).join("\n")}
+                                onChange={(e) =>
+                                  editQuestion(sec.id, q.id, {
+                                    expected_evidence: e.target.value
+                                      .split("\n")
+                                      .map((x) => x.trim())
+                                      .filter(Boolean),
+                                  })
+                                }
+                                disabled={!isDraft}
+                                placeholder="One evidence item per line"
+                                rows={4}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
               ))}
+
               {isDraft && (
-                <Button variant="outline" size="sm" onClick={() => addQuestion(sec.id)}>
-                  <Plus className="h-4 w-4 mr-1" /> Add question
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => addQuestion(sec.id)}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add question
                 </Button>
               )}
             </div>
@@ -494,12 +1129,15 @@ function SurveyEditor() {
 
         {isDraft && (
           <Button variant="outline" onClick={addSection} className="w-full">
-            <Plus className="h-4 w-4 mr-2" /> Add section
+            <Plus className="h-4 w-4 mr-2" />
+            Add section
           </Button>
         )}
 
         {survey.schema.sections.length === 0 && !isDraft && (
-          <div className="text-center text-muted-foreground py-12">No questions in this survey.</div>
+          <div className="text-center text-muted-foreground py-12">
+            No questions in this survey.
+          </div>
         )}
       </div>
     </div>
