@@ -1,11 +1,7 @@
-// Build a completed-survey PDF report based on the original uploaded PDF.
-// - Auth required (JWT verified by gateway).
-// - Members can export their own submitted response.
-// - The survey owner (lead_auditor) and admins can export any member's response,
-//   or a combined report (all submitted members) when userId is omitted.
+// Extract structured audit/compliance form schema from a PDF using Lovable AI
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,219 +9,446 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-function safe(s: unknown) {
-  // Replace characters StandardFont WinAnsi can't encode.
-  return String(s ?? "")
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u201C\u201D]/g, '"')
-    .replace(/[\u2013\u2014]/g, "-")
-    .replace(/[^\x00-\xFF]/g, "?");
+const FORM_SCHEMA_TOOL = {
+  type: "function",
+  function: {
+    name: "build_form_schema",
+    description:
+      "Convert an audit, checklist, regulation, policy or standard PDF into a structured audit form schema with sections, questions, normative references, risks, recommended actions and expected evidence.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: {
+          type: "string",
+          description: "Title of the survey/audit",
+        },
+        description: {
+          type: "string",
+          description: "One-sentence description of the audit",
+        },
+        sections: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              title: {
+                type: "string",
+                description: "Audit section title",
+              },
+              questions: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    label: {
+                      type: "string",
+                      description:
+                        "The audit question. In compliance mode, phrase it so Yes means compliant and No means non-compliant.",
+                    },
+                    type: {
+                      type: "string",
+                      enum: [
+                        "text",
+                        "textarea",
+                        "yes_no",
+                        "multiple_choice",
+                        "rating",
+                        "file",
+                      ],
+                    },
+                    required: {
+                      type: "boolean",
+                    },
+                    options: {
+                      type: "array",
+                      items: { type: "string" },
+                      description:
+                        "Choices for multiple_choice; ignored for other types",
+                    },
+                    scale_max: {
+                      type: "number",
+                      description:
+                        "For rating: max scale, for example 5 or 10. Default 5.",
+                    },
+                    reference: {
+                      type: "object",
+                      description:
+                        "Normative or regulatory reference that supports the question.",
+                      properties: {
+                        source_title: {
+                          type: "string",
+                          description:
+                            "Name of the regulation, policy, standard or document if available.",
+                        },
+                        section: {
+                          type: "string",
+                          description:
+                            "Section, chapter, clause, article or numeral from the source document.",
+                        },
+                        page: {
+                          type: "string",
+                          description:
+                            "Page number or page range if identifiable.",
+                        },
+                        requirement: {
+                          type: "string",
+                          description:
+                            "Short summary of the requirement that must be verified.",
+                        },
+                        source_text: {
+                          type: "string",
+                          description:
+                            "Brief relevant excerpt or paraphrase from the PDF. Keep it short.",
+                        },
+                      },
+                    },
+                    risk: {
+                      type: "object",
+                      description:
+                        "Risk associated with a finding or non-compliance. Usually triggered when the answer is No.",
+                      properties: {
+                        title: {
+                          type: "string",
+                          description: "Short risk title",
+                        },
+                        description: {
+                          type: "string",
+                          description:
+                            "Risk description if the requirement is not met.",
+                        },
+                        category: {
+                          type: "string",
+                          enum: [
+                            "Legal",
+                            "Compliance",
+                            "Operational",
+                            "Financial",
+                            "Security",
+                            "Reputational",
+                            "Environmental",
+                            "Safety",
+                            "Quality",
+                            "Other",
+                          ],
+                        },
+                        severity: {
+                          type: "string",
+                          enum: ["Low", "Medium", "High", "Critical"],
+                        },
+                        likelihood: {
+                          type: "string",
+                          enum: ["Low", "Medium", "High"],
+                        },
+                        impact: {
+                          type: "string",
+                          enum: ["Low", "Medium", "High"],
+                        },
+                      },
+                    },
+                    recommended_actions: {
+                      type: "array",
+                      items: { type: "string" },
+                      description:
+                        "Corrective or preventive actions recommended if a finding is detected.",
+                    },
+                    expected_evidence: {
+                      type: "array",
+                      items: { type: "string" },
+                      description:
+                        "Documents, records, screenshots, photos or other evidence the auditor should review.",
+                    },
+                  },
+                  required: ["label", "type"],
+                },
+              },
+            },
+            required: ["title", "questions"],
+          },
+        },
+      },
+      required: ["title", "sections"],
+    },
+  },
+};
+
+function asArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item ?? "").trim())
+    .filter((item) => item.length > 0);
 }
 
-function wrap(text: string, font: any, size: number, maxWidth: number): string[] {
-  const words = safe(text).split(/\s+/);
-  const lines: string[] = [];
-  let line = "";
-  for (const w of words) {
-    const candidate = line ? line + " " + w : w;
-    if (font.widthOfTextAtSize(candidate, size) > maxWidth) {
-      if (line) lines.push(line);
-      line = w;
-    } else {
-      line = candidate;
-    }
+function cleanObject(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+
+  const obj = value as Record<string, unknown>;
+  const cleaned: Record<string, unknown> = {};
+
+  for (const [key, raw] of Object.entries(obj)) {
+    if (raw === null || raw === undefined) continue;
+    if (typeof raw === "string" && raw.trim() === "") continue;
+    cleaned[key] = typeof raw === "string" ? raw.trim() : raw;
   }
-  if (line) lines.push(line);
-  return lines;
+
+  return Object.keys(cleaned).length ? cleaned : undefined;
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
 
   try {
-    const { surveyId, userId } = await req.json();
+    const { surveyId } = await req.json();
+
     if (!surveyId) throw new Error("surveyId required");
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const ANON = Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "";
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+
+    if (!LOVABLE_API_KEY) {
+      throw new Error("LOVABLE_API_KEY not configured");
+    }
+
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) throw new Error("Unauthorized");
-    const userClient = createClient(SUPABASE_URL, ANON, {
-      global: { headers: { Authorization: authHeader } },
-    });
+
+    const userClient = createClient(
+      SUPABASE_URL,
+      Deno.env.get("SUPABASE_ANON_KEY") ??
+        Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ??
+        "",
+      {
+        global: { headers: { Authorization: authHeader } },
+      }
+    );
+
     const { data: userRes } = await userClient.auth.getUser();
-    const callerId = userRes?.user?.id;
-    if (!callerId) throw new Error("Unauthorized");
+    const userId = userRes?.user?.id;
+
+    if (!userId) throw new Error("Unauthorized");
 
     const { data: survey, error: sErr } = await admin
       .from("surveys")
-      .select("id, title, description, pdf_path, schema, mode, lead_auditor_id, assigned_group_id, status")
+      .select("id, pdf_path, title, lead_auditor_id, mode")
       .eq("id", surveyId)
       .single();
+
     if (sErr || !survey) throw new Error("Survey not found");
 
-    const isOwner = survey.lead_auditor_id === callerId;
-    let isAdmin = false;
-    {
+    if (survey.lead_auditor_id !== userId) {
       const { data: roleRow } = await admin
         .from("user_roles")
         .select("role")
-        .eq("user_id", callerId)
+        .eq("user_id", userId)
         .eq("role", "admin")
         .maybeSingle();
-      isAdmin = !!roleRow;
+
+      if (!roleRow) throw new Error("Forbidden");
     }
 
-    // Decide which responses to include
-    let targetUserIds: string[] = [];
-    if (userId) {
-      // Specific member: caller must be that user, owner, or admin
-      if (userId !== callerId && !isOwner && !isAdmin) throw new Error("Forbidden");
-      targetUserIds = [userId];
-    } else {
-      // Combined report (all submitted members) — only owner/admin
-      if (!isOwner && !isAdmin) throw new Error("Forbidden");
-    }
+    if (!survey.pdf_path) throw new Error("No PDF uploaded");
 
-    let respQuery = admin
-      .from("survey_responses")
-      .select("user_id, answers, submitted, submitted_at, progress")
-      .eq("survey_id", surveyId)
-      .eq("submitted", true);
-    if (targetUserIds.length) respQuery = respQuery.in("user_id", targetUserIds);
-    const { data: responses, error: rErr } = await respQuery;
-    if (rErr) throw rErr;
-    if (!responses || responses.length === 0) throw new Error("No submitted responses to export");
+    const mode: "free" | "compliance" =
+      (survey as any).mode === "compliance" ? "compliance" : "free";
 
-    // Profiles for member display
-    const ids = Array.from(new Set(responses.map((r) => r.user_id)));
-    const { data: profiles } = await admin
-      .from("profiles")
-      .select("id,email,full_name")
-      .in("id", ids);
-    const profMap = new Map((profiles ?? []).map((p) => [p.id, p]));
+    const { data: blob, error: dlErr } = await admin.storage
+      .from("survey-pdfs")
+      .download(survey.pdf_path);
 
-    // Build PDF: optional original pages + appended answer pages per member
-    const out = await PDFDocument.create();
-    const font = await out.embedFont(StandardFonts.Helvetica);
-    const fontBold = await out.embedFont(StandardFonts.HelveticaBold);
+    if (dlErr || !blob) throw new Error("Could not download PDF");
 
-    // Copy original PDF first if present
-    if (survey.pdf_path) {
-      try {
-        const { data: blob } = await admin.storage.from("survey-pdfs").download(survey.pdf_path);
-        if (blob) {
-          const bytes = new Uint8Array(await blob.arrayBuffer());
-          const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
-          const copied = await out.copyPages(src, src.getPageIndices());
-          copied.forEach((p) => out.addPage(p));
-        }
-      } catch (e) {
-        console.warn("Could not embed original PDF", e);
-      }
-    }
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    let binary = "";
+    for (let i = 0; i < buf.length; i++) binary += String.fromCharCode(buf[i]);
 
-    const sections = ((survey.schema as any)?.sections ?? []) as Array<{ id: string; title: string; questions: Array<any> }>;
-    const isCompliance = (survey as any).mode === "compliance";
+    const b64 = btoa(binary);
 
-    // Helper: signed URL builder for evidence
-    const signedUrl = async (path: string) => {
-      try {
-        const { data } = await admin.storage.from("response-files").createSignedUrl(path, 60 * 60 * 24 * 7);
-        return data?.signedUrl ?? null;
-      } catch { return null; }
-    };
+    const systemPrompt =
+      mode === "compliance"
+        ? `
+You are an expert compliance auditor.
 
-    // Build answer pages per member
-    for (const resp of responses) {
-      const profile = profMap.get(resp.user_id);
-      const memberName = profile?.full_name || profile?.email || resp.user_id;
+The PDF may contain regulations, standards, policies, legal requirements, operational procedures or audit criteria.
 
-      let page = out.addPage([612, 792]); // US Letter
-      const margin = 48;
-      let y = 792 - margin;
+Your task:
+1. Identify auditable obligations from the document.
+2. Convert each obligation into a Yes/No audit question.
+3. Phrase every question so that:
+   - Yes = compliant
+   - No = finding / non-compliance
+   - N/A = not applicable
+4. Do not create questions for comments or evidence. The app already supports comments and evidence.
+5. For every question, include:
+   - reference.source_title if available
+   - reference.section, article, clause or numeral if available
+   - reference.page if identifiable
+   - reference.requirement as a short summary of the requirement
+   - reference.source_text as a short relevant excerpt or paraphrase
+6. For every question, create a risk that may arise if the auditor answers No.
+7. For every risk, include category, severity, likelihood and impact.
+8. Include recommended corrective/preventive actions.
+9. Include expected evidence the auditor should review.
+10. Be thorough, but do not invent requirements not supported by the PDF.
+11. Risks and actions may be professional suggestions based on the extracted requirement, but the requirement itself must come from the PDF.
+12. Return structured JSON only through the function tool.
+`
+        : `
+You are an expert at converting audit checklists and survey PDFs into structured digital forms.
 
-      const drawTitle = (text: string, size = 16) => {
-        page.drawText(safe(text), { x: margin, y, size, font: fontBold, color: rgb(0.1, 0.1, 0.15) });
-        y -= size + 8;
-      };
-      const drawText = (text: string, size = 11, bold = false, color = rgb(0.15, 0.15, 0.18)) => {
-        const f = bold ? fontBold : font;
-        const lines = wrap(text, f, size, 612 - margin * 2);
-        for (const line of lines) {
-          if (y < margin + 40) { page = out.addPage([612, 792]); y = 792 - margin; }
-          page.drawText(line, { x: margin, y, size, font: f, color });
-          y -= size + 4;
-        }
-      };
-      const hr = () => {
-        if (y < margin + 20) { page = out.addPage([612, 792]); y = 792 - margin; }
-        page.drawLine({ start: { x: margin, y }, end: { x: 612 - margin, y }, thickness: 0.5, color: rgb(0.85, 0.85, 0.9) });
-        y -= 10;
-      };
+Identify sections, questions, and the most appropriate field type for each question.
+Use:
+- yes_no for compliance or Y/N items
+- rating for scored items
+- multiple_choice when options are listed
+- file if evidence/photos are requested
+- textarea for long-form notes
+- text for short answers
 
-      drawTitle(`Audit report — ${survey.title}`, 18);
-      drawText(`Mode: ${isCompliance ? "Compliance" : "Free"}`, 10);
-      drawText(`Member: ${memberName}`, 10);
-      drawText(`Submitted: ${resp.submitted_at ? new Date(resp.submitted_at).toLocaleString() : "-"}`, 10);
-      hr();
+If the PDF contains regulations, standards, policies or requirements, include reference, risk, recommended_actions and expected_evidence when useful.
+Be thorough, but do not invent questions that are not supported by the document.
+Return structured JSON only through the function tool.
+`;
 
-      const answers = (resp.answers as any) ?? {};
-      let qNum = 0;
-      for (const sec of sections) {
-        if (y < margin + 60) { page = out.addPage([612, 792]); y = 792 - margin; }
-        y -= 6;
-        drawText(sec.title, 13, true, rgb(0.05, 0.05, 0.1));
-        for (const q of sec.questions) {
-          qNum += 1;
-          if (y < margin + 80) { page = out.addPage([612, 792]); y = 792 - margin; }
-          drawText(`${qNum}. ${q.label}`, 11, true);
-          const a = answers[q.id];
-          if (isCompliance) {
-            const v = (a && typeof a === "object" ? a : {}) as { value?: string; comment?: string; evidence?: { path: string; name: string } };
-            const valLabel = v.value ?? "(no answer)";
-            const valColor = v.value === "Yes" ? rgb(0.1, 0.55, 0.25) : v.value === "No" ? rgb(0.75, 0.15, 0.15) : rgb(0.4, 0.4, 0.45);
-            drawText(`Answer: ${valLabel}`, 11, false, valColor);
-            if (v.comment) drawText(`Comment: ${v.comment}`, 10);
-            if (v.evidence?.path) {
-              const url = await signedUrl(v.evidence.path);
-              drawText(`Evidence: ${v.evidence.name}${url ? `  (${url})` : ""}`, 9, false, rgb(0.3, 0.3, 0.6));
-            }
-          } else {
-            let txt = "(no answer)";
-            if (a !== undefined && a !== null && a !== "") {
-              if (typeof a === "object" && a.name) txt = `File: ${a.name}`;
-              else if (Array.isArray(a)) txt = a.join(", ");
-              else txt = String(a);
-            }
-            drawText(txt, 11);
+    const userInstruction =
+      mode === "compliance"
+        ? "Extract a complete compliance audit questionnaire from this PDF. Include normative references, risks for findings, recommended actions and expected evidence for every question."
+        : "Extract a complete form schema from this audit PDF.";
+
+    const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt,
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: userInstruction },
+              {
+                type: "file",
+                file: {
+                  filename: "survey.pdf",
+                  file_data: `data:application/pdf;base64,${b64}`,
+                },
+              },
+            ],
+          },
+        ],
+        tools: [FORM_SCHEMA_TOOL],
+        tool_choice: {
+          type: "function",
+          function: { name: "build_form_schema" },
+        },
+      }),
+    });
+
+    if (!aiRes.ok) {
+      const t = await aiRes.text();
+      console.error("AI gateway error", aiRes.status, t);
+
+      if (aiRes.status === 429) {
+        return new Response(
+          JSON.stringify({
+            error: "Rate limit reached. Please try again shortly.",
+          }),
+          {
+            status: 429,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
           }
-          y -= 4;
-        }
+        );
       }
+
+      if (aiRes.status === 402) {
+        return new Response(
+          JSON.stringify({
+            error: "AI credits exhausted. Add credits in workspace settings.",
+          }),
+          {
+            status: 402,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      throw new Error("AI extraction failed");
     }
 
-    const bytes = await out.save();
+    const aiJson = await aiRes.json();
+    const toolCall = aiJson.choices?.[0]?.message?.tool_calls?.[0];
 
-    const exportPath = `${callerId}/exports/${surveyId}-${Date.now()}.pdf`;
-    const { error: upErr } = await admin.storage
-      .from("response-files")
-      .upload(exportPath, bytes, { contentType: "application/pdf", upsert: true });
+    if (!toolCall) {
+      throw new Error("AI did not return a structured response");
+    }
+
+    const args = JSON.parse(toolCall.function.arguments);
+
+    const sections = (args.sections ?? []).map((sec: any, si: number) => ({
+      id: `s${si}_${crypto.randomUUID().slice(0, 8)}`,
+      title: sec.title ?? `Section ${si + 1}`,
+      questions: (sec.questions ?? []).map((q: any, qi: number) => ({
+        id: `q${si}_${qi}_${crypto.randomUUID().slice(0, 8)}`,
+        label: String(q.label ?? `Question ${qi + 1}`).trim(),
+        type: mode === "compliance" ? "yes_no" : q.type ?? "text",
+        required: q.required ?? mode === "compliance",
+        options: mode === "compliance" ? [] : q.options ?? [],
+        scale_max: q.scale_max ?? 5,
+
+        reference: cleanObject(q.reference),
+        risk: cleanObject(q.risk),
+
+        recommended_actions: asArray(q.recommended_actions),
+        expected_evidence: asArray(q.expected_evidence),
+      })),
+    }));
+
+    const update: any = { schema: { sections } };
+
+    if (args.title && (!survey.title || survey.title === "Untitled survey")) {
+      update.title = args.title;
+    }
+
+    if (args.description) {
+      update.description = args.description;
+    }
+
+    const { error: upErr } = await admin
+      .from("surveys")
+      .update(update)
+      .eq("id", surveyId);
+
     if (upErr) throw upErr;
 
-    const { data: signed } = await admin.storage
-      .from("response-files")
-      .createSignedUrl(exportPath, 60 * 60);
+    const questionCount = sections.reduce(
+      (sum: number, section: any) => sum + (section.questions?.length ?? 0),
+      0
+    );
 
-    return new Response(JSON.stringify({ success: true, url: signed?.signedUrl ?? null, path: exportPath }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        success: true,
+        sections: sections.length,
+        questions: questionCount,
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   } catch (e) {
-    console.error("export-survey-pdf error:", e);
+    console.error("extract-survey error:", e);
+
     const msg = e instanceof Error ? e.message : "Unknown error";
+
     return new Response(JSON.stringify({ error: msg }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
