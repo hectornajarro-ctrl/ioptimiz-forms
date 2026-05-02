@@ -9,8 +9,15 @@ import { useEffect, useState, type ComponentType } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import {
+  Plus,
+  FileText,
+  Clock,
+  CheckCircle2,
+  Users,
+  BarChart3,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Plus, FileText, Clock, CheckCircle2, Users } from "lucide-react";
 
 interface SurveyRow {
   id: string;
@@ -19,6 +26,9 @@ interface SurveyRow {
   status: "draft" | "approved" | "archived";
   created_at: string;
   assigned_group_id: string | null;
+  lead_auditor_id: string;
+  lead_auditor_name?: string | null;
+  lead_auditor_email?: string | null;
   total_members?: number;
   submitted_members?: number;
   all_completed?: boolean;
@@ -38,25 +48,68 @@ function Surveys() {
 
   const [rows, setRows] = useState<SurveyRow[]>([]);
   const [creating, setCreating] = useState(false);
+  const [loadingRows, setLoadingRows] = useState(true);
 
   const isListRoute = location.pathname === "/surveys";
+  const isAdmin = hasRole("admin");
+  const isLeadAuditor = hasRole("lead_auditor");
 
   useEffect(() => {
-    if (!authLoading && !hasRole("lead_auditor") && !hasRole("admin")) {
+    if (!authLoading && !isLeadAuditor && !isAdmin) {
       navigate({ to: "/dashboard" });
     }
-  }, [authLoading, hasRole, navigate]);
+  }, [authLoading, isLeadAuditor, isAdmin, navigate]);
 
   const load = async () => {
     if (!user) return;
 
-    const { data } = await supabase
+    setLoadingRows(true);
+
+    const query = supabase
       .from("surveys")
-      .select("id,title,description,status,created_at,assigned_group_id")
-      .eq("lead_auditor_id", user.id)
+      .select(
+        "id,title,description,status,created_at,assigned_group_id,lead_auditor_id"
+      )
       .order("created_at", { ascending: false });
 
+    const { data, error } = isAdmin
+      ? await query
+      : await query.eq("lead_auditor_id", user.id);
+
+    if (error) {
+      setLoadingRows(false);
+      toast.error(error.message);
+      return;
+    }
+
     const surveys = (data ?? []) as SurveyRow[];
+
+    const leadIds = Array.from(
+      new Set(surveys.map((s) => s.lead_auditor_id).filter(Boolean))
+    );
+
+    if (leadIds.length > 0) {
+      const { data: leadProfiles } = await supabase
+        .from("profiles")
+        .select("id,email,full_name")
+        .in("id", leadIds);
+
+      const leadMap = new Map(
+        (leadProfiles ?? []).map((p) => [
+          p.id,
+          {
+            email: p.email,
+            full_name: p.full_name,
+          },
+        ])
+      );
+
+      surveys.forEach((s) => {
+        const lead = leadMap.get(s.lead_auditor_id);
+        s.lead_auditor_name = lead?.full_name ?? null;
+        s.lead_auditor_email = lead?.email ?? null;
+      });
+    }
 
     const approved = surveys.filter(
       (s) => s.status === "approved" && s.assigned_group_id
@@ -66,6 +119,7 @@ function Surveys() {
       const groupIds = Array.from(
         new Set(approved.map((s) => s.assigned_group_id!))
       );
+
       const surveyIds = approved.map((s) => s.id);
 
       const [{ data: members }, { data: responses }] = await Promise.all([
@@ -109,11 +163,15 @@ function Surveys() {
     }
 
     setRows(surveys);
+    setLoadingRows(false);
   };
 
   useEffect(() => {
-    if (user) load();
-  }, [user]);
+    if (user && (isLeadAuditor || isAdmin)) {
+      load();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, isLeadAuditor, isAdmin]);
 
   const createSurvey = async () => {
     if (!user) return;
@@ -204,14 +262,16 @@ function Surveys() {
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">
-            My Surveys
+            {isAdmin ? "All Surveys" : "My Surveys"}
           </h1>
+
           <p className="text-muted-foreground mt-1">
-            Create compliance audits, upload PDFs, and assign approved forms to
-            groups.
+            {isAdmin
+              ? "View every compliance audit form and monitor progress across all lead auditors."
+              : "Create compliance audits, upload PDFs, and monitor progress for your assigned forms."}
           </p>
         </div>
 
@@ -221,83 +281,112 @@ function Surveys() {
         </Button>
       </div>
 
-      {rows.length === 0 ? (
+      {loadingRows ? (
+        <div className="text-center py-16 border border-dashed rounded-lg text-muted-foreground">
+          Loading surveys…
+        </div>
+      ) : rows.length === 0 ? (
         <div className="text-center py-16 border border-dashed rounded-lg text-muted-foreground">
           <FileText className="h-10 w-10 mx-auto mb-3 opacity-50" />
           No surveys yet. Click <strong>New survey</strong> to start.
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {rows.map((s) => (
-            <div
-              key={s.id}
-              className="relative rounded-lg border border-border bg-card p-5 h-full transition-colors hover:border-accent"
-              style={{ boxShadow: "var(--shadow-card)" }}
-            >
-              <Link to="/surveys/$id" params={{ id: s.id }} className="block">
-                <div className="flex items-start justify-between mb-3">
-                  <FileText className="h-5 w-5 text-muted-foreground" />
+          {rows.map((s) => {
+            const completion =
+              typeof s.total_members === "number" && s.total_members > 0
+                ? Math.round(((s.submitted_members ?? 0) / s.total_members) * 100)
+                : 0;
 
-                  <div className="flex items-center gap-2">
-                    {s.status === "approved" && s.all_completed && (
-                      <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs bg-success/15 text-success">
-                        <CheckCircle2 className="h-3 w-3" />
-                        Completed
-                      </span>
-                    )}
+            return (
+              <div
+                key={s.id}
+                className="relative rounded-lg border border-border bg-card p-5 h-full transition-colors hover:border-accent"
+                style={{ boxShadow: "var(--shadow-card)" }}
+              >
+                <Link to="/surveys/$id" params={{ id: s.id }} className="block">
+                  <div className="flex items-start justify-between mb-3">
+                    <FileText className="h-5 w-5 text-muted-foreground" />
 
-                    {statusBadge(s.status)}
+                    <div className="flex items-center gap-2">
+                      {s.status === "approved" && s.all_completed && (
+                        <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs bg-success/15 text-success">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Completed
+                        </span>
+                      )}
+
+                      {statusBadge(s.status)}
+                    </div>
                   </div>
-                </div>
 
-                <div className="font-semibold tracking-tight">{s.title}</div>
+                  <div className="font-semibold tracking-tight">{s.title}</div>
 
-                {s.description && (
-                  <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
-                    {s.description}
-                  </p>
-                )}
+                  {s.description && (
+                    <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+                      {s.description}
+                    </p>
+                  )}
 
-                {s.status === "approved" &&
-                  typeof s.total_members === "number" && (
-                    <div className="mt-4">
-                      <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
-                        <span className="inline-flex items-center gap-1">
-                          <Users className="h-3 w-3" />
-                          Members completed
-                        </span>
-                        <span>
-                          {s.submitted_members ?? 0} / {s.total_members}
-                        </span>
-                      </div>
-
-                      <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                        <div
-                          className={`h-full transition-all ${
-                            s.all_completed ? "bg-success" : "bg-accent"
-                          }`}
-                          style={{
-                            width: `${
-                              s.total_members > 0
-                                ? Math.round(
-                                    ((s.submitted_members ?? 0) /
-                                      s.total_members) *
-                                      100
-                                  )
-                                : 0
-                            }%`,
-                          }}
-                        />
-                      </div>
+                  {isAdmin && (
+                    <div className="mt-3 rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground">
+                      <span className="font-medium">Lead auditor: </span>
+                      {s.lead_auditor_name ||
+                        s.lead_auditor_email ||
+                        s.lead_auditor_id}
                     </div>
                   )}
 
-                <div className="text-xs text-muted-foreground mt-4">
-                  {new Date(s.created_at).toLocaleDateString()}
-                </div>
-              </Link>
-            </div>
-          ))}
+                  {s.status === "approved" &&
+                    typeof s.total_members === "number" && (
+                      <div className="mt-4">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
+                          <span className="inline-flex items-center gap-1">
+                            <Users className="h-3 w-3" />
+                            Members completed
+                          </span>
+
+                          <span>
+                            {s.submitted_members ?? 0} / {s.total_members}
+                          </span>
+                        </div>
+
+                        <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                          <div
+                            className={`h-full transition-all ${
+                              s.all_completed ? "bg-success" : "bg-accent"
+                            }`}
+                            style={{
+                              width: `${completion}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                  <div className="text-xs text-muted-foreground mt-4">
+                    {new Date(s.created_at).toLocaleDateString()}
+                  </div>
+                </Link>
+
+                {s.status === "approved" && (
+                  <div className="mt-4">
+                    <Button variant="outline" size="sm" asChild>
+                      <Link
+                        to="/surveys/$id/progress"
+                        params={{
+                          id: s.id,
+                        }}
+                      >
+                        <BarChart3 className="h-4 w-4 mr-1" />
+                        View progress
+                      </Link>
+                    </Button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
