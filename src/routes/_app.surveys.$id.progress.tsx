@@ -9,6 +9,7 @@ import {
   Download,
   Eye,
   FileImage,
+  FileText,
   MessageSquare,
   ShieldAlert,
   Users,
@@ -58,6 +59,7 @@ interface SurveyProgressRow {
   title: string;
   assigned_group_id: string | null;
   lead_auditor_id: string;
+  pdf_path: string | null;
   schema: SurveySchema | null;
 }
 
@@ -151,6 +153,7 @@ function SurveyProgress() {
   const [forbidden, setForbidden] = useState(false);
   const [exportingId, setExportingId] = useState<string | null>(null);
   const [openingEvidence, setOpeningEvidence] = useState<string | null>(null);
+  const [openingPdf, setOpeningPdf] = useState(false);
 
   const isAdmin = hasRole("admin");
 
@@ -198,16 +201,18 @@ function SurveyProgress() {
     const findings = members.reduce((sum, member) => {
       return (
         sum +
-        questionIds.filter((questionId) => member.answers[questionId]?.value === "No")
-          .length
+        questionIds.filter(
+          (questionId) => member.answers[questionId]?.value === "No"
+        ).length
       );
     }, 0);
 
     const evidenceCount = members.reduce((sum, member) => {
       return (
         sum +
-        questionIds.filter((questionId) => !!member.answers[questionId]?.evidence)
-          .length
+        questionIds.filter(
+          (questionId) => !!member.answers[questionId]?.evidence
+        ).length
       );
     }, 0);
 
@@ -257,6 +262,30 @@ function SurveyProgress() {
     }
   };
 
+  const openSourcePdf = async () => {
+    if (!survey?.pdf_path) return toast.error("No PDF uploaded");
+
+    setOpeningPdf(true);
+
+    try {
+      const { data, error } = await supabase.storage
+        .from("survey-pdfs")
+        .createSignedUrl(survey.pdf_path, 60 * 10);
+
+      if (error) throw error;
+
+      if (!data?.signedUrl) {
+        throw new Error("Could not create PDF link");
+      }
+
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not open PDF");
+    } finally {
+      setOpeningPdf(false);
+    }
+  };
+
   const openEvidenceFile = async (evidence: EvidenceFile) => {
     if (!evidence.path) return;
 
@@ -294,7 +323,7 @@ function SurveyProgress() {
 
       const { data: s, error: surveyError } = await supabase
         .from("surveys")
-        .select("title,assigned_group_id,lead_auditor_id,schema")
+        .select("title,assigned_group_id,lead_auditor_id,pdf_path,schema")
         .eq("id", id)
         .single();
 
@@ -469,6 +498,33 @@ function SurveyProgress() {
           .
         </p>
       </div>
+
+      {survey?.pdf_path && (
+        <div
+          className="rounded-lg border bg-card p-5 mb-6"
+          style={{ boxShadow: "var(--shadow-card)" }}
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <FileText className="h-5 w-5 text-muted-foreground" />
+
+            <div className="flex-1 min-w-64">
+              <div className="font-semibold tracking-tight">Source PDF</div>
+              <div className="text-sm text-muted-foreground truncate">
+                {survey.pdf_path.split("/").pop()}
+              </div>
+            </div>
+
+            <Button
+              variant="outline"
+              onClick={openSourcePdf}
+              disabled={openingPdf}
+            >
+              <Eye className="h-4 w-4 mr-2" />
+              {openingPdf ? "Opening…" : "View PDF"}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {members.length === 0 ? (
         <div className="rounded-lg border bg-card p-6 text-muted-foreground">
