@@ -4,16 +4,9 @@ import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import {
-  ArrowLeft,
-  Upload,
-  CheckCircle2,
-  Camera,
-  Download,
-} from "lucide-react";
+import { ArrowLeft, CheckCircle2, Camera, Download } from "lucide-react";
 
 type FieldType =
   | "text"
@@ -107,7 +100,7 @@ function FillSurvey() {
     title: string;
     description: string | null;
     sections: Section[];
-    mode: "free" | "compliance";
+    mode: "compliance";
     pdf_path: string | null;
     starts_at: string | null;
     ends_at: string | null;
@@ -127,31 +120,20 @@ function FillSurvey() {
   const progress = useMemo(() => {
     if (allQuestions.length === 0) return 0;
 
-    const isComplianceSurvey = survey?.mode === "compliance";
-
     const filled = allQuestions.filter((q) => {
       const v = answers[q.id];
 
-      if (isComplianceSurvey) {
-        return (
-          v &&
-          typeof v === "object" &&
-          v.value !== undefined &&
-          v.value !== null &&
-          v.value !== ""
-        );
-      }
-
       return (
-        v !== undefined &&
-        v !== null &&
-        v !== "" &&
-        !(Array.isArray(v) && v.length === 0)
+        v &&
+        typeof v === "object" &&
+        v.value !== undefined &&
+        v.value !== null &&
+        v.value !== ""
       );
     }).length;
 
     return Math.round((filled / allQuestions.length) * 100);
-  }, [allQuestions, answers, survey?.mode]);
+  }, [allQuestions, answers]);
 
   useEffect(() => {
     if (!user) return;
@@ -173,7 +155,7 @@ function FillSurvey() {
         title: s.title,
         description: s.description,
         sections: sch.sections ?? [],
-        mode: (s as any).mode === "compliance" ? "compliance" : "free",
+        mode: "compliance",
         pdf_path: (s as any).pdf_path ?? null,
         starts_at: (s as any).starts_at ?? null,
         ends_at: (s as any).ends_at ?? null,
@@ -219,8 +201,6 @@ function FillSurvey() {
         return;
       }
 
-      // If this survey belongs to an open-enrollment group with no members yet,
-      // claim it now: insert this user as the sole member of the group.
       const groupId = (s as any).assigned_group_id as string | null;
 
       if (groupId) {
@@ -283,20 +263,10 @@ function FillSurvey() {
     })();
   }, [id, user, navigate]);
 
-  const updateAnswer = (qid: string, v: any) =>
-    setAnswers({ ...answers, [qid]: v });
-
-  const isCompliance = survey?.mode === "compliance";
-
-  // For compliance, answers are:
-  // { value, comment, evidence: { path, name } }
   const getCompVal = (qid: string) =>
     (answers[qid] ?? {}) as ComplianceAnswer;
 
-  const setCompField = (
-    qid: string,
-    patch: Partial<ComplianceAnswer>
-  ) => {
+  const setCompField = (qid: string, patch: Partial<ComplianceAnswer>) => {
     const cur = getCompVal(qid);
 
     setAnswers({
@@ -325,19 +295,12 @@ function FillSurvey() {
 
     if (error) return toast.error(error.message);
 
-    if (isCompliance) {
-      setCompField(qid, {
-        evidence: {
-          path,
-          name: file.name,
-        },
-      });
-    } else {
-      updateAnswer(qid, {
+    setCompField(qid, {
+      evidence: {
         path,
         name: file.name,
-      });
-    }
+      },
+    });
 
     toast.success("File attached");
   };
@@ -366,11 +329,7 @@ function FillSurvey() {
 
         const v = answers[q.id];
 
-        if (isCompliance) {
-          return !v || typeof v !== "object" || !v.value;
-        }
-
-        return v === undefined || v === "" || v === null;
+        return !v || typeof v !== "object" || !v.value;
       });
 
       if (missing.length) {
@@ -509,313 +468,186 @@ function FillSurvey() {
                         </Label>
                       </div>
 
-                      {isCompliance ? (
-                        <div className="space-y-3">
-                          <div className="flex flex-wrap gap-2">
-                            {[
-                              {
-                                v: "Yes",
-                                cls: "data-[on=true]:bg-success data-[on=true]:text-white data-[on=true]:border-success",
-                              },
-                              {
-                                v: "No",
-                                cls: "data-[on=true]:bg-destructive data-[on=true]:text-destructive-foreground data-[on=true]:border-destructive",
-                              },
-                              {
-                                v: "N/A",
-                                cls: "data-[on=true]:bg-muted data-[on=true]:text-foreground data-[on=true]:border-muted-foreground/40",
-                              },
-                            ].map(({ v, cls }) => {
-                              const on = getCompVal(q.id).value === v;
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            {
+                              v: "Yes",
+                              cls: "data-[on=true]:bg-success data-[on=true]:text-white data-[on=true]:border-success",
+                            },
+                            {
+                              v: "No",
+                              cls: "data-[on=true]:bg-destructive data-[on=true]:text-destructive-foreground data-[on=true]:border-destructive",
+                            },
+                            {
+                              v: "N/A",
+                              cls: "data-[on=true]:bg-muted data-[on=true]:text-foreground data-[on=true]:border-muted-foreground/40",
+                            },
+                          ].map(({ v, cls }) => {
+                            const on = getCompVal(q.id).value === v;
 
-                              return (
-                                <button
-                                  key={v}
-                                  type="button"
-                                  data-on={on}
-                                  disabled={submitted}
-                                  onClick={() =>
-                                    setCompField(q.id, { value: v })
-                                  }
-                                  className={`px-4 py-2 rounded-md border text-sm transition-colors bg-background hover:bg-accent hover:text-accent-foreground ${cls}`}
-                                >
-                                  {v}
-                                </button>
-                              );
-                            })}
-                          </div>
-
-                          {hasReference(q) && (
-                            <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-2">
-                              <div className="font-medium">
-                                Normative reference
-                              </div>
-
-                              {(q.reference?.source_title ||
-                                q.reference?.section ||
-                                q.reference?.page) && (
-                                <div className="text-muted-foreground">
-                                  {[
-                                    q.reference?.source_title,
-                                    q.reference?.section,
-                                    q.reference?.page &&
-                                      `Page ${q.reference.page}`,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" · ")}
-                                </div>
-                              )}
-
-                              {q.reference?.requirement && (
-                                <div>
-                                  <span className="font-medium">
-                                    Requirement:{" "}
-                                  </span>
-                                  {q.reference.requirement}
-                                </div>
-                              )}
-
-                              {q.reference?.source_text && (
-                                <div className="text-xs text-muted-foreground">
-                                  {q.reference.source_text}
-                                </div>
-                              )}
-
-                              {(q.expected_evidence?.length ?? 0) > 0 && (
-                                <div>
-                                  <div className="font-medium">
-                                    Expected evidence:
-                                  </div>
-                                  <ul className="list-disc pl-5 text-muted-foreground">
-                                    {q.expected_evidence!.map((item, idx) => (
-                                      <li key={idx}>{item}</li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {getCompVal(q.id).value === "No" && hasRisk(q) && (
-                            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm space-y-2">
-                              <div className="font-semibold text-destructive">
-                                Finding risk:{" "}
-                                {q.risk?.title ||
-                                  "Potential non-compliance risk"}
-                              </div>
-
-                              <div className="flex flex-wrap gap-2 text-xs">
-                                {q.risk?.category && (
-                                  <span className="rounded-full border px-2 py-0.5">
-                                    {q.risk.category}
-                                  </span>
-                                )}
-
-                                {q.risk?.severity && (
-                                  <span className="rounded-full border px-2 py-0.5">
-                                    Severity: {q.risk.severity}
-                                  </span>
-                                )}
-
-                                {q.risk?.likelihood && (
-                                  <span className="rounded-full border px-2 py-0.5">
-                                    Likelihood: {q.risk.likelihood}
-                                  </span>
-                                )}
-
-                                {q.risk?.impact && (
-                                  <span className="rounded-full border px-2 py-0.5">
-                                    Impact: {q.risk.impact}
-                                  </span>
-                                )}
-                              </div>
-
-                              {q.risk?.description && (
-                                <p className="text-muted-foreground">
-                                  {q.risk.description}
-                                </p>
-                              )}
-
-                              {(q.recommended_actions?.length ?? 0) > 0 && (
-                                <div>
-                                  <div className="font-medium">
-                                    Recommended actions:
-                                  </div>
-                                  <ul className="list-disc pl-5 text-muted-foreground">
-                                    {q.recommended_actions!.map(
-                                      (item, idx) => (
-                                        <li key={idx}>{item}</li>
-                                      )
-                                    )}
-                                  </ul>
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          <Textarea
-                            placeholder="Comment / finding details"
-                            value={getCompVal(q.id).comment ?? ""}
-                            onChange={(e) =>
-                              setCompField(q.id, {
-                                comment: e.target.value,
-                              })
-                            }
-                            disabled={submitted}
-                            maxLength={2000}
-                            rows={2}
-                          />
-
-                          <div className="flex items-center gap-3">
-                            <label className="cursor-pointer">
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
+                            return (
+                              <button
+                                key={v}
+                                type="button"
+                                data-on={on}
                                 disabled={submitted}
-                                onChange={(e) =>
-                                  e.target.files?.[0] &&
-                                  onUploadFile(q.id, e.target.files[0])
-                                }
-                              />
+                                onClick={() => setCompField(q.id, { value: v })}
+                                className={`px-4 py-2 rounded-md border text-sm transition-colors bg-background hover:bg-accent hover:text-accent-foreground ${cls}`}
+                              >
+                                {v}
+                              </button>
+                            );
+                          })}
+                        </div>
 
-                              <span className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
-                                <Camera className="h-4 w-4" />
-                                {getCompVal(q.id).evidence?.name
-                                  ? "Replace photo evidence"
-                                  : "Add photo evidence"}
-                              </span>
-                            </label>
+                        {hasReference(q) && (
+                          <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-2">
+                            <div className="font-medium">
+                              Normative reference
+                            </div>
 
-                            {getCompVal(q.id).evidence?.name && (
-                              <span className="text-xs text-muted-foreground truncate max-w-xs">
-                                {getCompVal(q.id).evidence!.name}
-                              </span>
+                            {(q.reference?.source_title ||
+                              q.reference?.section ||
+                              q.reference?.page) && (
+                              <div className="text-muted-foreground">
+                                {[
+                                  q.reference?.source_title,
+                                  q.reference?.section,
+                                  q.reference?.page &&
+                                    `Page ${q.reference.page}`,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </div>
+                            )}
+
+                            {q.reference?.requirement && (
+                              <div>
+                                <span className="font-medium">
+                                  Requirement:{" "}
+                                </span>
+                                {q.reference.requirement}
+                              </div>
+                            )}
+
+                            {q.reference?.source_text && (
+                              <div className="text-xs text-muted-foreground">
+                                {q.reference.source_text}
+                              </div>
+                            )}
+
+                            {(q.expected_evidence?.length ?? 0) > 0 && (
+                              <div>
+                                <div className="font-medium">
+                                  Expected evidence:
+                                </div>
+                                <ul className="list-disc pl-5 text-muted-foreground">
+                                  {q.expected_evidence!.map((item, idx) => (
+                                    <li key={idx}>{item}</li>
+                                  ))}
+                                </ul>
+                              </div>
                             )}
                           </div>
+                        )}
+
+                        {getCompVal(q.id).value === "No" && hasRisk(q) && (
+                          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm space-y-2">
+                            <div className="font-semibold text-destructive">
+                              Finding risk:{" "}
+                              {q.risk?.title ||
+                                "Potential non-compliance risk"}
+                            </div>
+
+                            <div className="flex flex-wrap gap-2 text-xs">
+                              {q.risk?.category && (
+                                <span className="rounded-full border px-2 py-0.5">
+                                  {q.risk.category}
+                                </span>
+                              )}
+
+                              {q.risk?.severity && (
+                                <span className="rounded-full border px-2 py-0.5">
+                                  Severity: {q.risk.severity}
+                                </span>
+                              )}
+
+                              {q.risk?.likelihood && (
+                                <span className="rounded-full border px-2 py-0.5">
+                                  Likelihood: {q.risk.likelihood}
+                                </span>
+                              )}
+
+                              {q.risk?.impact && (
+                                <span className="rounded-full border px-2 py-0.5">
+                                  Impact: {q.risk.impact}
+                                </span>
+                              )}
+                            </div>
+
+                            {q.risk?.description && (
+                              <p className="text-muted-foreground">
+                                {q.risk.description}
+                              </p>
+                            )}
+
+                            {(q.recommended_actions?.length ?? 0) > 0 && (
+                              <div>
+                                <div className="font-medium">
+                                  Recommended actions:
+                                </div>
+                                <ul className="list-disc pl-5 text-muted-foreground">
+                                  {q.recommended_actions!.map((item, idx) => (
+                                    <li key={idx}>{item}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <Textarea
+                          placeholder="Comment / finding details"
+                          value={getCompVal(q.id).comment ?? ""}
+                          onChange={(e) =>
+                            setCompField(q.id, {
+                              comment: e.target.value,
+                            })
+                          }
+                          disabled={submitted}
+                          maxLength={2000}
+                          rows={2}
+                        />
+
+                        <div className="flex items-center gap-3">
+                          <label className="cursor-pointer">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              disabled={submitted}
+                              onChange={(e) =>
+                                e.target.files?.[0] &&
+                                onUploadFile(q.id, e.target.files[0])
+                              }
+                            />
+
+                            <span className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
+                              <Camera className="h-4 w-4" />
+                              {getCompVal(q.id).evidence?.name
+                                ? "Replace photo evidence"
+                                : "Add photo evidence"}
+                            </span>
+                          </label>
+
+                          {getCompVal(q.id).evidence?.name && (
+                            <span className="text-xs text-muted-foreground truncate max-w-xs">
+                              {getCompVal(q.id).evidence!.name}
+                            </span>
+                          )}
                         </div>
-                      ) : (
-                        <>
-                          {q.type === "text" && (
-                            <Input
-                              value={answers[q.id] ?? ""}
-                              onChange={(e) =>
-                                updateAnswer(q.id, e.target.value)
-                              }
-                              disabled={submitted}
-                              maxLength={500}
-                            />
-                          )}
-
-                          {q.type === "textarea" && (
-                            <Textarea
-                              value={answers[q.id] ?? ""}
-                              onChange={(e) =>
-                                updateAnswer(q.id, e.target.value)
-                              }
-                              disabled={submitted}
-                              maxLength={5000}
-                              rows={4}
-                            />
-                          )}
-
-                          {q.type === "yes_no" && (
-                            <div className="flex gap-2">
-                              {["Yes", "No", "N/A"].map((opt) => (
-                                <button
-                                  key={opt}
-                                  type="button"
-                                  disabled={submitted}
-                                  onClick={() => updateAnswer(q.id, opt)}
-                                  className={`px-4 py-2 rounded-md border text-sm transition-colors ${
-                                    answers[q.id] === opt
-                                      ? "bg-primary text-primary-foreground border-primary"
-                                      : "bg-background hover:bg-accent hover:text-accent-foreground"
-                                  }`}
-                                >
-                                  {opt}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-
-                          {q.type === "multiple_choice" && (
-                            <div className="space-y-1.5">
-                              {q.options.map((opt) => (
-                                <label
-                                  key={opt}
-                                  className="flex items-center gap-2 cursor-pointer"
-                                >
-                                  <input
-                                    type="radio"
-                                    name={q.id}
-                                    value={opt}
-                                    checked={answers[q.id] === opt}
-                                    onChange={() => updateAnswer(q.id, opt)}
-                                    disabled={submitted}
-                                  />
-                                  <span className="text-sm">{opt}</span>
-                                </label>
-                              ))}
-                            </div>
-                          )}
-
-                          {q.type === "rating" && (
-                            <div className="flex gap-1">
-                              {Array.from({ length: q.scale_max }).map(
-                                (_, n) => {
-                                  const v = n + 1;
-
-                                  return (
-                                    <button
-                                      key={v}
-                                      type="button"
-                                      disabled={submitted}
-                                      onClick={() => updateAnswer(q.id, v)}
-                                      className={`w-10 h-10 rounded-md border text-sm font-medium transition-colors ${
-                                        answers[q.id] === v
-                                          ? "bg-primary text-primary-foreground border-primary"
-                                          : "bg-background hover:bg-accent hover:text-accent-foreground"
-                                      }`}
-                                    >
-                                      {v}
-                                    </button>
-                                  );
-                                }
-                              )}
-                            </div>
-                          )}
-
-                          {q.type === "file" && (
-                            <div className="flex items-center gap-3">
-                              <label className="cursor-pointer">
-                                <input
-                                  type="file"
-                                  className="hidden"
-                                  disabled={submitted}
-                                  onChange={(e) =>
-                                    e.target.files?.[0] &&
-                                    onUploadFile(q.id, e.target.files[0])
-                                  }
-                                />
-
-                                <span className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
-                                  <Upload className="h-4 w-4" />
-                                  {answers[q.id]?.name
-                                    ? "Replace file"
-                                    : "Upload file"}
-                                </span>
-                              </label>
-
-                              {answers[q.id]?.name && (
-                                <span className="text-xs text-muted-foreground">
-                                  {answers[q.id].name}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </>
-                      )}
+                      </div>
                     </div>
                   </div>
                 </div>
