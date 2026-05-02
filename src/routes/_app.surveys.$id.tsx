@@ -833,6 +833,66 @@ function SurveyEditor() {
             style={{ boxShadow: "var(--shadow-card)" }}
           >
             <div className="mb-3 flex items-center gap-2">
+              <Lightbulb className="h-5 w-5 text-muted-foreground" />
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Acciones sugeridas para el auditor
+              </p>
+            </div>
+
+            <Label className="text-xs">Acciones sugeridas</Label>
+            <Textarea
+              value={(survey.schema.auditor_actions ?? []).join("\n")}
+              onChange={(e) =>
+                updateSchemaMeta({
+                  auditor_actions: e.target.value
+                    .split("\n")
+                    .map((x) => x.trim())
+                    .filter(Boolean),
+                })
+              }
+              disabled={!isDraft}
+              placeholder="Una acción por línea"
+              rows={11}
+              maxLength={6000}
+            />
+
+            <p className="text-xs text-muted-foreground mt-2">
+              Escribe una acción por línea. Estas acciones serán visibles para
+              los auditores asignados.
+            </p>
+          </div>
+
+          <div
+            className="rounded-lg border bg-card p-5"
+            style={{ boxShadow: "var(--shadow-card)" }}
+          >
+            <div className="mb-3 flex items-center gap-2">
+              <ListChecks className="h-5 w-5 text-muted-foreground" />
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Preguntas encontradas
+              </p>
+            </div>
+
+            <div className="text-4xl font-semibold tracking-tight">
+              {questionCount}
+            </div>
+
+            <p className="text-sm text-muted-foreground mt-2">
+              Preguntas generadas desde el PDF y organizadas en{" "}
+              {survey.schema.sections.length} sección(es).
+            </p>
+
+            <p className="text-xs text-muted-foreground mt-4">
+              Este valor se actualiza automáticamente según la cantidad de
+              preguntas existentes en el Survey.
+            </p>
+          </div>
+
+          <div
+            className="rounded-lg border bg-card p-5"
+            style={{ boxShadow: "var(--shadow-card)" }}
+          >
+            <div className="mb-3 flex items-center gap-2">
               <ClipboardList className="h-5 w-5 text-muted-foreground" />
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Resumen del PDF y objetivo
@@ -872,66 +932,6 @@ function SurveyEditor() {
                 />
               </div>
             </div>
-          </div>
-
-          <div
-            className="rounded-lg border bg-card p-5"
-            style={{ boxShadow: "var(--shadow-card)" }}
-          >
-            <div className="mb-3 flex items-center gap-2">
-              <ListChecks className="h-5 w-5 text-muted-foreground" />
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Preguntas encontradas
-              </p>
-            </div>
-
-            <div className="text-4xl font-semibold tracking-tight">
-              {questionCount}
-            </div>
-
-            <p className="text-sm text-muted-foreground mt-2">
-              Preguntas generadas desde el PDF y organizadas en{" "}
-              {survey.schema.sections.length} sección(es).
-            </p>
-
-            <p className="text-xs text-muted-foreground mt-4">
-              Este valor se actualiza automáticamente según la cantidad de
-              preguntas existentes en el Survey.
-            </p>
-          </div>
-
-          <div
-            className="rounded-lg border bg-card p-5"
-            style={{ boxShadow: "var(--shadow-card)" }}
-          >
-            <div className="mb-3 flex items-center gap-2">
-              <Lightbulb className="h-5 w-5 text-muted-foreground" />
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Acciones sugeridas para el auditor
-              </p>
-            </div>
-
-            <Label className="text-xs">Acciones sugeridas</Label>
-            <Textarea
-              value={(survey.schema.auditor_actions ?? []).join("\n")}
-              onChange={(e) =>
-                updateSchemaMeta({
-                  auditor_actions: e.target.value
-                    .split("\n")
-                    .map((x) => x.trim())
-                    .filter(Boolean),
-                })
-              }
-              disabled={!isDraft}
-              placeholder="Una acción por línea"
-              rows={11}
-              maxLength={6000}
-            />
-
-            <p className="text-xs text-muted-foreground mt-2">
-              Escribe una acción por línea. Estas acciones serán visibles para
-              los auditores asignados.
-            </p>
           </div>
         </div>
       )}
