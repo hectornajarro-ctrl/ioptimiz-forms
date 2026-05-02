@@ -1,4 +1,4 @@
-// Admin-only edge function to update user name and email.
+// Admin-only edge function to update user name, email and password.
 // Requires the caller to be authenticated with the 'admin' role.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
@@ -88,6 +88,7 @@ Deno.serve(async (req) => {
     const userId = String(body.userId ?? "").trim();
     const email = String(body.email ?? "").trim().toLowerCase();
     const fullName = String(body.full_name ?? "").trim();
+    const password = String(body.password ?? "").trim();
 
     if (!userId) {
       return json({ error: "User ID is required" }, 400);
@@ -95,6 +96,13 @@ Deno.serve(async (req) => {
 
     if (!email || !isValidEmail(email)) {
       return json({ error: "Valid email is required" }, 400);
+    }
+
+    if (password && password.length < 6) {
+      return json(
+        { error: "Password must have at least 6 characters" },
+        400
+      );
     }
 
     const { data: existingProfile, error: profileErr } = await admin
@@ -126,15 +134,28 @@ Deno.serve(async (req) => {
       return json({ error: "Another user already uses this email" }, 409);
     }
 
+    const authUpdatePayload: {
+      email: string;
+      email_confirm: boolean;
+      password?: string;
+      user_metadata: {
+        full_name: string;
+      };
+    } = {
+      email,
+      email_confirm: true,
+      user_metadata: {
+        full_name: fullName || email,
+      },
+    };
+
+    if (password) {
+      authUpdatePayload.password = password;
+    }
+
     const { error: authUpdateErr } = await admin.auth.admin.updateUserById(
       userId,
-      {
-        email,
-        email_confirm: true,
-        user_metadata: {
-          full_name: fullName || email,
-        },
-      }
+      authUpdatePayload
     );
 
     if (authUpdateErr) {
@@ -158,6 +179,7 @@ Deno.serve(async (req) => {
       id: userId,
       email,
       full_name: fullName || null,
+      password_updated: Boolean(password),
     });
   } catch (e) {
     return json(
