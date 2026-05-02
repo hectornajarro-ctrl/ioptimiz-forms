@@ -295,7 +295,9 @@ function Surveys() {
           {rows.map((s) => {
             const completion =
               typeof s.total_members === "number" && s.total_members > 0
-                ? Math.round(((s.submitted_members ?? 0) / s.total_members) * 100)
+                ? Math.round(
+                    ((s.submitted_members ?? 0) / s.total_members) * 100
+                  )
                 : 0;
 
             return (
@@ -360,6 +362,11 @@ function Surveys() {
                               width: `${completion}%`,
                             }}
                           />
+                        </div>
+
+                        <div className="mt-1.5 text-xs text-muted-foreground">
+                          Progress:{" "}
+                          <span className="font-medium">{completion}%</span>
                         </div>
                       </div>
                     )}
