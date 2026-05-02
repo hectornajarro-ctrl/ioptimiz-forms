@@ -19,6 +19,21 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+interface Question {
+  id: string;
+  label?: string;
+}
+
+interface Section {
+  id: string;
+  title?: string;
+  questions?: Question[];
+}
+
+interface SurveySchema {
+  sections?: Section[];
+}
+
 interface SurveyRow {
   id: string;
   title: string;
@@ -27,11 +42,23 @@ interface SurveyRow {
   created_at: string;
   assigned_group_id: string | null;
   lead_auditor_id: string;
+  schema: SurveySchema | null;
   lead_auditor_name?: string | null;
   lead_auditor_email?: string | null;
   total_members?: number;
   submitted_members?: number;
   all_completed?: boolean;
+  total_questions?: number;
+  answered_questions?: number;
+  possible_questions?: number;
+  progress_percent?: number;
+}
+
+interface SurveyResponseRow {
+  survey_id: string;
+  user_id: string;
+  submitted: boolean | null;
+  answers: Record<string, unknown> | null;
 }
 
 export const Route = createFileRoute("/_app/surveys")({
@@ -40,6 +67,60 @@ export const Route = createFileRoute("/_app/surveys")({
     meta: [{ title: "Surveys — AuditFlow" }],
   }),
 });
+
+function getQuestionIds(schema: SurveySchema | null | undefined): string[] {
+  const sections = schema?.sections ?? [];
+
+  return sections.flatMap((section) =>
+    (section.questions ?? [])
+      .map((question) => String(question.id ?? "").trim())
+      .filter(Boolean)
+  );
+}
+
+function isAnswered(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  if (typeof value === "object") {
+    const answer = value as {
+      value?: unknown;
+      comment?: unknown;
+      evidence?: unknown;
+    };
+
+    if (answer.value === undefined || answer.value === null) return false;
+
+    if (typeof answer.value === "string") {
+      return answer.value.trim().length > 0;
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+function countAnsweredQuestions(
+  answers: Record<string, unknown> | null | undefined,
+  questionIds: string[]
+): number {
+  if (!answers || questionIds.length === 0) return 0;
+
+  return questionIds.filter((questionId) => isAnswered(answers[questionId]))
+    .length;
+}
 
 function Surveys() {
   const { user, hasRole, loading: authLoading } = useAuth();
@@ -68,7 +149,7 @@ function Surveys() {
     const query = supabase
       .from("surveys")
       .select(
-        "id,title,description,status,created_at,assigned_group_id,lead_auditor_id"
+        "id,title,description,status,created_at,assigned_group_id,lead_auditor_id,schema"
       )
       .order("created_at", { ascending: false });
 
@@ -129,36 +210,64 @@ function Surveys() {
           .in("group_id", groupIds),
         supabase
           .from("survey_responses")
-          .select("survey_id,submitted")
+          .select("survey_id,user_id,submitted,answers")
           .in("survey_id", surveyIds),
       ]);
 
-      const memberCount = new Map<string, number>();
+      const membersByGroup = new Map<string, string[]>();
 
       (members ?? []).forEach((m) => {
-        memberCount.set(m.group_id, (memberCount.get(m.group_id) ?? 0) + 1);
+        const current = membersByGroup.get(m.group_id) ?? [];
+        current.push(m.user_id);
+        membersByGroup.set(m.group_id, current);
       });
 
-      const submittedCount = new Map<string, number>();
+      const responsesBySurvey = new Map<string, SurveyResponseRow[]>();
 
-      (responses ?? []).forEach((r) => {
-        if (r.submitted) {
-          submittedCount.set(
-            r.survey_id,
-            (submittedCount.get(r.survey_id) ?? 0) + 1
-          );
-        }
+      ((responses ?? []) as SurveyResponseRow[]).forEach((response) => {
+        const current = responsesBySurvey.get(response.survey_id) ?? [];
+        current.push(response);
+        responsesBySurvey.set(response.survey_id, current);
       });
 
       surveys.forEach((s) => {
-        if (s.status === "approved" && s.assigned_group_id) {
-          const total = memberCount.get(s.assigned_group_id) ?? 0;
-          const done = submittedCount.get(s.id) ?? 0;
+        if (s.status !== "approved" || !s.assigned_group_id) return;
 
-          s.total_members = total;
-          s.submitted_members = done;
-          s.all_completed = total > 0 && done >= total;
-        }
+        const memberIds = membersByGroup.get(s.assigned_group_id) ?? [];
+        const memberIdSet = new Set(memberIds);
+        const surveyResponses = responsesBySurvey.get(s.id) ?? [];
+
+        const questionIds = getQuestionIds(s.schema);
+        const totalQuestions = questionIds.length;
+
+        const submittedMembers = surveyResponses.filter(
+          (response) => memberIdSet.has(response.user_id) && response.submitted
+        ).length;
+
+        const answeredQuestions = surveyResponses
+          .filter((response) => memberIdSet.has(response.user_id))
+          .reduce(
+            (total, response) =>
+              total + countAnsweredQuestions(response.answers, questionIds),
+            0
+          );
+
+        const possibleQuestions = totalQuestions * memberIds.length;
+
+        const progressPercent =
+          possibleQuestions > 0
+            ? Math.round((answeredQuestions / possibleQuestions) * 100)
+            : 0;
+
+        s.total_members = memberIds.length;
+        s.submitted_members = submittedMembers;
+        s.all_completed =
+          memberIds.length > 0 && submittedMembers >= memberIds.length;
+
+        s.total_questions = totalQuestions;
+        s.answered_questions = answeredQuestions;
+        s.possible_questions = possibleQuestions;
+        s.progress_percent = progressPercent;
       });
     }
 
@@ -293,12 +402,9 @@ function Surveys() {
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {rows.map((s) => {
-            const completion =
-              typeof s.total_members === "number" && s.total_members > 0
-                ? Math.round(
-                    ((s.submitted_members ?? 0) / s.total_members) * 100
-                  )
-                : 0;
+            const progress = s.progress_percent ?? 0;
+            const answered = s.answered_questions ?? 0;
+            const possible = s.possible_questions ?? 0;
 
             return (
               <div
@@ -356,17 +462,22 @@ function Surveys() {
                         <div className="h-2 rounded-full bg-secondary overflow-hidden">
                           <div
                             className={`h-full transition-all ${
-                              s.all_completed ? "bg-success" : "bg-accent"
+                              progress === 100 ? "bg-success" : "bg-accent"
                             }`}
                             style={{
-                              width: `${completion}%`,
+                              width: `${progress}%`,
                             }}
                           />
                         </div>
 
-                        <div className="mt-1.5 text-xs text-muted-foreground">
-                          Progress:{" "}
-                          <span className="font-medium">{completion}%</span>
+                        <div className="mt-1.5 flex items-center justify-between text-xs text-muted-foreground">
+                          <span>
+                            Questions answered: {answered} / {possible}
+                          </span>
+
+                          <span className="font-medium">
+                            Progress: {progress}%
+                          </span>
                         </div>
                       </div>
                     )}
