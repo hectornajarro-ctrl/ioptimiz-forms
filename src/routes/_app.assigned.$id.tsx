@@ -13,6 +13,8 @@ import {
   Download,
   ClipboardList,
   Lightbulb,
+  Eye,
+  FileText,
 } from "lucide-react";
 
 type FieldType =
@@ -133,6 +135,7 @@ function FillSurvey() {
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [openingPdf, setOpeningPdf] = useState(false);
 
   const allQuestions = useMemo(
     () => survey?.schema.sections.flatMap((s) => s.questions) ?? [],
@@ -305,6 +308,30 @@ function FillSurvey() {
     });
   };
 
+  const openSourcePdf = async () => {
+    if (!survey?.pdf_path) return toast.error("No PDF uploaded");
+
+    setOpeningPdf(true);
+
+    try {
+      const { data, error } = await supabase.storage
+        .from("survey-pdfs")
+        .createSignedUrl(survey.pdf_path, 60 * 10);
+
+      if (error) throw error;
+
+      if (!data?.signedUrl) {
+        throw new Error("Could not create PDF link");
+      }
+
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not open PDF");
+    } finally {
+      setOpeningPdf(false);
+    }
+  };
+
   const onUploadFile = async (qid: string, file: File) => {
     if (!user) return;
 
@@ -470,6 +497,33 @@ function FillSurvey() {
           </div>
         )}
       </div>
+
+      {survey.pdf_path && (
+        <div
+          className="rounded-lg border bg-card p-5 mb-6"
+          style={{ boxShadow: "var(--shadow-card)" }}
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <FileText className="h-5 w-5 text-muted-foreground" />
+
+            <div className="flex-1 min-w-64">
+              <div className="font-semibold tracking-tight">Source PDF</div>
+              <div className="text-sm text-muted-foreground truncate">
+                {survey.pdf_path.split("/").pop()}
+              </div>
+            </div>
+
+            <Button
+              variant="outline"
+              onClick={openSourcePdf}
+              disabled={openingPdf}
+            >
+              <Eye className="h-4 w-4 mr-2" />
+              {openingPdf ? "Opening…" : "View PDF"}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {hasAuditContext && (
         <div className="grid md:grid-cols-2 gap-4 mb-6">
