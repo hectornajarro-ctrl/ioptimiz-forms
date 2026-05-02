@@ -400,7 +400,7 @@ function Surveys() {
           No surveys yet. Click <strong>New survey</strong> to start.
         </div>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 items-stretch">
           {rows.map((s) => {
             const progress = s.progress_percent ?? 0;
             const answered = s.answered_questions ?? 0;
@@ -409,10 +409,14 @@ function Surveys() {
             return (
               <div
                 key={s.id}
-                className="relative rounded-lg border border-border bg-card p-5 h-full transition-colors hover:border-accent"
+                className="relative rounded-lg border border-border bg-card p-5 h-full min-h-[480px] flex flex-col transition-colors hover:border-accent"
                 style={{ boxShadow: "var(--shadow-card)" }}
               >
-                <Link to="/surveys/$id" params={{ id: s.id }} className="block">
+                <Link
+                  to="/surveys/$id"
+                  params={{ id: s.id }}
+                  className="block"
+                >
                   <div className="flex items-start justify-between mb-3">
                     <FileText className="h-5 w-5 text-muted-foreground" />
 
@@ -428,80 +432,98 @@ function Surveys() {
                     </div>
                   </div>
 
-                  <div className="font-semibold tracking-tight">{s.title}</div>
+                  <div className="font-semibold tracking-tight line-clamp-3 min-h-[72px]">
+                    {s.title}
+                  </div>
 
-                  {s.description && (
-                    <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+                  {s.description ? (
+                    <p className="text-sm text-muted-foreground mt-2 line-clamp-2 min-h-[44px]">
                       {s.description}
                     </p>
+                  ) : (
+                    <div className="mt-2 min-h-[44px]" />
                   )}
+                </Link>
 
+                <div className="mt-auto pt-4">
                   {isAdmin && (
-                    <div className="mt-3 rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground">
-                      <span className="font-medium">Lead auditor: </span>
-                      {s.lead_auditor_name ||
-                        s.lead_auditor_email ||
-                        s.lead_auditor_id}
-                    </div>
+                    <Link
+                      to="/surveys/$id"
+                      params={{ id: s.id }}
+                      className="block"
+                    >
+                      <div className="rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground">
+                        <span className="font-medium">Lead auditor: </span>
+                        {s.lead_auditor_name ||
+                          s.lead_auditor_email ||
+                          s.lead_auditor_id}
+                      </div>
+                    </Link>
                   )}
 
                   {s.status === "approved" &&
                     typeof s.total_members === "number" && (
-                      <div className="mt-4">
-                        <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
-                          <span className="inline-flex items-center gap-1">
-                            <Users className="h-3 w-3" />
-                            Members completed
-                          </span>
+                      <Link
+                        to="/surveys/$id"
+                        params={{ id: s.id }}
+                        className="block"
+                      >
+                        <div className="mt-4">
+                          <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
+                            <span className="inline-flex items-center gap-1">
+                              <Users className="h-3 w-3" />
+                              Members completed
+                            </span>
 
-                          <span>
-                            {s.submitted_members ?? 0} / {s.total_members}
-                          </span>
+                            <span>
+                              {s.submitted_members ?? 0} / {s.total_members}
+                            </span>
+                          </div>
+
+                          <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                            <div
+                              className={`h-full transition-all ${
+                                progress === 100 ? "bg-success" : "bg-accent"
+                              }`}
+                              style={{
+                                width: `${progress}%`,
+                              }}
+                            />
+                          </div>
+
+                          <div className="mt-1.5 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                            <span>
+                              Questions answered: {answered} / {possible}
+                            </span>
+
+                            <span className="font-medium whitespace-nowrap">
+                              Progress: {progress}%
+                            </span>
+                          </div>
                         </div>
-
-                        <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                          <div
-                            className={`h-full transition-all ${
-                              progress === 100 ? "bg-success" : "bg-accent"
-                            }`}
-                            style={{
-                              width: `${progress}%`,
-                            }}
-                          />
-                        </div>
-
-                        <div className="mt-1.5 flex items-center justify-between text-xs text-muted-foreground">
-                          <span>
-                            Questions answered: {answered} / {possible}
-                          </span>
-
-                          <span className="font-medium">
-                            Progress: {progress}%
-                          </span>
-                        </div>
-                      </div>
+                      </Link>
                     )}
 
                   <div className="text-xs text-muted-foreground mt-4">
                     {new Date(s.created_at).toLocaleDateString()}
                   </div>
-                </Link>
 
-                {s.status === "approved" && (
-                  <div className="mt-4">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link
-                        to="/surveys/$id/progress"
-                        params={{
-                          id: s.id,
-                        }}
-                      >
-                        <BarChart3 className="h-4 w-4 mr-1" />
-                        View progress
-                      </Link>
-                    </Button>
-                  </div>
-                )}
+                  {s.status === "approved" && (
+                    <div className="mt-4">
+                      <Button variant="outline" size="sm" asChild>
+                        <Link
+                          to="/surveys/$id/progress"
+                          params={{
+                            id: s.id,
+                          }}
+                        >
+                          <BarChart3 className="h-4 w-4 mr-1" />
+                          View progress
+                        </Link>
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
