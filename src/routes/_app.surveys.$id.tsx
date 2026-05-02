@@ -91,7 +91,7 @@ interface SurveyRow {
   title: string;
   description: string | null;
   status: "draft" | "approved" | "archived";
-  mode: "free" | "compliance";
+  mode: "compliance";
   pdf_path: string | null;
   schema: { sections: Section[] };
   assigned_group_id: string | null;
@@ -99,15 +99,6 @@ interface SurveyRow {
   starts_at: string | null;
   ends_at: string | null;
 }
-
-const TYPE_LABELS: Record<FieldType, string> = {
-  text: "Short text",
-  textarea: "Long text",
-  yes_no: "Yes / No",
-  multiple_choice: "Multiple choice",
-  rating: "Rating scale",
-  file: "File / Photo upload",
-};
 
 export const Route = createFileRoute("/_app/surveys/$id")({
   component: SurveyEditor,
@@ -120,7 +111,6 @@ function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-// Convert ISO string ↔ value for datetime-local input in user's local zone.
 function toLocalInput(iso: string | null): string {
   if (!iso) return "";
 
@@ -173,7 +163,7 @@ function SurveyEditor() {
 
     setSurvey({
       ...data,
-      mode: ((data as any).mode ?? "free") as "free" | "compliance",
+      mode: "compliance",
       schema: { sections: sch.sections ?? [] },
       starts_at: (data as any).starts_at ?? null,
       ends_at: (data as any).ends_at ?? null,
@@ -230,7 +220,7 @@ function SurveyEditor() {
       .update({
         title: survey.title,
         description: survey.description,
-        mode: survey.mode,
+        mode: "compliance",
         schema: survey.schema as any,
         assigned_group_id: survey.assigned_group_id,
         starts_at: survey.starts_at,
@@ -328,6 +318,7 @@ function SurveyEditor() {
       .update({
         status: "approved",
         approved_at: new Date().toISOString(),
+        mode: "compliance",
       })
       .eq("id", survey.id);
 
@@ -344,6 +335,7 @@ function SurveyEditor() {
       .update({
         status: "draft",
         approved_at: null,
+        mode: "compliance",
       })
       .eq("id", survey.id);
 
@@ -410,8 +402,8 @@ function SurveyEditor() {
         {
           id: uid(),
           label: "New question",
-          type: survey.mode === "compliance" ? "yes_no" : "text",
-          required: survey.mode === "compliance",
+          type: "yes_no",
+          required: true,
           options: [],
           scale_max: 5,
           reference: {},
@@ -549,41 +541,10 @@ function SurveyEditor() {
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Survey mode</Label>
-            <Select
-              value={survey.mode}
-              onValueChange={(v) =>
-                updateField({ mode: v as "free" | "compliance" })
-              }
-              disabled={!isDraft}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="free">
-                  Free Mode — mixed question types text, ratings, choice…
-                </SelectItem>
-                <SelectItem value="compliance">
-                  Compliance Mode — Yes/No with comments & photo evidence
-                </SelectItem>
-              </SelectContent>
-            </Select>
-
-            <p className="text-xs text-muted-foreground">
-              {survey.mode === "compliance" ? (
-                <>
-                  AI extraction will turn every item into a Yes / No / N/A check.
-                  Members can add a comment and upload photo evidence per item.
-                </>
-              ) : (
-                <>
-                  Choose any question type per item. Photo / file uploads only on
-                  questions you mark as 'File / Photo'.
-                </>
-              )}
-            </p>
+          <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+            This survey is configured as a compliance audit. AI extraction will
+            generate Yes / No / N/A questions with normative references, risks,
+            recommended actions and expected evidence.
           </div>
 
           <div className="space-y-1.5">
@@ -596,7 +557,9 @@ function SurveyEditor() {
               <SelectTrigger>
                 <SelectValue
                   placeholder={
-                    groups.length ? "Select a group" : "You don't lead any groups yet"
+                    groups.length
+                      ? "Select a group"
+                      : "You don't lead any groups yet"
                   }
                 />
               </SelectTrigger>
@@ -662,9 +625,9 @@ function SurveyEditor() {
           <h2 className="font-semibold tracking-tight mb-1">Source PDF</h2>
 
           <p className="text-sm text-muted-foreground mb-4">
-            Upload a PDF checklist, regulation, standard or policy. In Compliance
-            Mode, AI will generate audit questions, normative references, risks,
-            recommended actions and expected evidence.
+            Upload a PDF checklist, regulation, standard or policy. AI will
+            generate audit questions, normative references, risks, recommended
+            actions and expected evidence.
           </p>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -757,27 +720,9 @@ function SurveyEditor() {
                       />
 
                       <div className="flex flex-wrap items-center gap-2">
-                        <Select
-                          value={q.type}
-                          onValueChange={(v) =>
-                            editQuestion(sec.id, q.id, {
-                              type: v as FieldType,
-                            })
-                          }
-                          disabled={!isDraft}
-                        >
-                          <SelectTrigger className="w-44 h-9">
-                            <SelectValue />
-                          </SelectTrigger>
-
-                          <SelectContent>
-                            {Object.entries(TYPE_LABELS).map(([v, l]) => (
-                              <SelectItem key={v} value={v}>
-                                {l}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <span className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
+                          Yes / No / N/A compliance check
+                        </span>
 
                         <label className="text-xs flex items-center gap-1.5">
                           <input
@@ -793,28 +738,6 @@ function SurveyEditor() {
                           Required
                         </label>
 
-                        {q.type === "rating" && (
-                          <div className="text-xs flex items-center gap-1.5">
-                            Scale max:
-                            <Input
-                              type="number"
-                              className="w-16 h-8"
-                              value={q.scale_max}
-                              min={2}
-                              max={10}
-                              disabled={!isDraft}
-                              onChange={(e) =>
-                                editQuestion(sec.id, q.id, {
-                                  scale_max: Math.max(
-                                    2,
-                                    Math.min(10, Number(e.target.value) || 5)
-                                  ),
-                                })
-                              }
-                            />
-                          </div>
-                        )}
-
                         {isDraft && (
                           <Button
                             variant="ghost"
@@ -827,281 +750,262 @@ function SurveyEditor() {
                         )}
                       </div>
 
-                      {q.type === "multiple_choice" && (
-                        <Input
-                          value={q.options.join(", ")}
-                          onChange={(e) =>
-                            editQuestion(sec.id, q.id, {
-                              options: e.target.value
-                                .split(",")
-                                .map((o) => o.trim())
-                                .filter(Boolean),
-                            })
-                          }
-                          disabled={!isDraft}
-                          placeholder="Comma-separated options"
-                          maxLength={500}
-                        />
-                      )}
+                      <div className="mt-3 rounded-md border bg-muted/30 p-3 space-y-3">
+                        <div>
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                            Normative reference
+                          </p>
 
-                      {survey.mode === "compliance" && (
-                        <div className="mt-3 rounded-md border bg-muted/30 p-3 space-y-3">
-                          <div>
-                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                              Normative reference
-                            </p>
-
-                            <div className="grid sm:grid-cols-3 gap-2 mt-2">
-                              <Input
-                                value={q.reference?.source_title ?? ""}
-                                onChange={(e) =>
-                                  editQuestion(sec.id, q.id, {
-                                    reference: {
-                                      ...(q.reference ?? {}),
-                                      source_title: e.target.value,
-                                    },
-                                  })
-                                }
-                                disabled={!isDraft}
-                                placeholder="Document / standard"
-                                maxLength={200}
-                              />
-
-                              <Input
-                                value={q.reference?.section ?? ""}
-                                onChange={(e) =>
-                                  editQuestion(sec.id, q.id, {
-                                    reference: {
-                                      ...(q.reference ?? {}),
-                                      section: e.target.value,
-                                    },
-                                  })
-                                }
-                                disabled={!isDraft}
-                                placeholder="Section / article / clause"
-                                maxLength={120}
-                              />
-
-                              <Input
-                                value={q.reference?.page ?? ""}
-                                onChange={(e) =>
-                                  editQuestion(sec.id, q.id, {
-                                    reference: {
-                                      ...(q.reference ?? {}),
-                                      page: e.target.value,
-                                    },
-                                  })
-                                }
-                                disabled={!isDraft}
-                                placeholder="Page"
-                                maxLength={50}
-                              />
-                            </div>
-
-                            <Textarea
-                              className="mt-2"
-                              value={q.reference?.requirement ?? ""}
+                          <div className="grid sm:grid-cols-3 gap-2 mt-2">
+                            <Input
+                              value={q.reference?.source_title ?? ""}
                               onChange={(e) =>
                                 editQuestion(sec.id, q.id, {
                                   reference: {
                                     ...(q.reference ?? {}),
-                                    requirement: e.target.value,
+                                    source_title: e.target.value,
                                   },
                                 })
                               }
                               disabled={!isDraft}
-                              placeholder="Requirement summary"
-                              maxLength={1000}
-                              rows={2}
+                              placeholder="Document / standard"
+                              maxLength={200}
                             />
 
-                            <Textarea
-                              className="mt-2"
-                              value={q.reference?.source_text ?? ""}
+                            <Input
+                              value={q.reference?.section ?? ""}
                               onChange={(e) =>
                                 editQuestion(sec.id, q.id, {
                                   reference: {
                                     ...(q.reference ?? {}),
-                                    source_text: e.target.value,
+                                    section: e.target.value,
                                   },
                                 })
                               }
                               disabled={!isDraft}
-                              placeholder="Short source text / excerpt"
-                              maxLength={1500}
-                              rows={2}
+                              placeholder="Section / article / clause"
+                              maxLength={120}
+                            />
+
+                            <Input
+                              value={q.reference?.page ?? ""}
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  reference: {
+                                    ...(q.reference ?? {}),
+                                    page: e.target.value,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                              placeholder="Page"
+                              maxLength={50}
                             />
                           </div>
 
-                          <div>
-                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                              Risk if finding is detected
-                            </p>
+                          <Textarea
+                            className="mt-2"
+                            value={q.reference?.requirement ?? ""}
+                            onChange={(e) =>
+                              editQuestion(sec.id, q.id, {
+                                reference: {
+                                  ...(q.reference ?? {}),
+                                  requirement: e.target.value,
+                                },
+                              })
+                            }
+                            disabled={!isDraft}
+                            placeholder="Requirement summary"
+                            maxLength={1000}
+                            rows={2}
+                          />
 
-                            <div className="grid sm:grid-cols-2 gap-2 mt-2">
-                              <Input
-                                value={q.risk?.title ?? ""}
-                                onChange={(e) =>
-                                  editQuestion(sec.id, q.id, {
-                                    risk: {
-                                      ...(q.risk ?? {}),
-                                      title: e.target.value,
-                                    },
-                                  })
-                                }
-                                disabled={!isDraft}
-                                placeholder="Risk title"
-                                maxLength={200}
-                              />
+                          <Textarea
+                            className="mt-2"
+                            value={q.reference?.source_text ?? ""}
+                            onChange={(e) =>
+                              editQuestion(sec.id, q.id, {
+                                reference: {
+                                  ...(q.reference ?? {}),
+                                  source_text: e.target.value,
+                                },
+                              })
+                            }
+                            disabled={!isDraft}
+                            placeholder="Short source text / excerpt"
+                            maxLength={1500}
+                            rows={2}
+                          />
+                        </div>
 
-                              <Input
-                                value={q.risk?.category ?? ""}
-                                onChange={(e) =>
-                                  editQuestion(sec.id, q.id, {
-                                    risk: {
-                                      ...(q.risk ?? {}),
-                                      category: e.target.value,
-                                    },
-                                  })
-                                }
-                                disabled={!isDraft}
-                                placeholder="Category"
-                                maxLength={100}
-                              />
-                            </div>
+                        <div>
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                            Risk if finding is detected
+                          </p>
 
-                            <div className="grid sm:grid-cols-3 gap-2 mt-2">
-                              <Select
-                                value={q.risk?.severity ?? ""}
-                                onValueChange={(v) =>
-                                  editQuestion(sec.id, q.id, {
-                                    risk: {
-                                      ...(q.risk ?? {}),
-                                      severity: v,
-                                    },
-                                  })
-                                }
-                                disabled={!isDraft}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Severity" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="Low">Low</SelectItem>
-                                  <SelectItem value="Medium">Medium</SelectItem>
-                                  <SelectItem value="High">High</SelectItem>
-                                  <SelectItem value="Critical">
-                                    Critical
-                                  </SelectItem>
-                                </SelectContent>
-                              </Select>
-
-                              <Select
-                                value={q.risk?.likelihood ?? ""}
-                                onValueChange={(v) =>
-                                  editQuestion(sec.id, q.id, {
-                                    risk: {
-                                      ...(q.risk ?? {}),
-                                      likelihood: v,
-                                    },
-                                  })
-                                }
-                                disabled={!isDraft}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Likelihood" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="Low">Low</SelectItem>
-                                  <SelectItem value="Medium">Medium</SelectItem>
-                                  <SelectItem value="High">High</SelectItem>
-                                </SelectContent>
-                              </Select>
-
-                              <Select
-                                value={q.risk?.impact ?? ""}
-                                onValueChange={(v) =>
-                                  editQuestion(sec.id, q.id, {
-                                    risk: {
-                                      ...(q.risk ?? {}),
-                                      impact: v,
-                                    },
-                                  })
-                                }
-                                disabled={!isDraft}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Impact" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="Low">Low</SelectItem>
-                                  <SelectItem value="Medium">Medium</SelectItem>
-                                  <SelectItem value="High">High</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-
-                            <Textarea
-                              className="mt-2"
-                              value={q.risk?.description ?? ""}
+                          <div className="grid sm:grid-cols-2 gap-2 mt-2">
+                            <Input
+                              value={q.risk?.title ?? ""}
                               onChange={(e) =>
                                 editQuestion(sec.id, q.id, {
                                   risk: {
                                     ...(q.risk ?? {}),
-                                    description: e.target.value,
+                                    title: e.target.value,
                                   },
                                 })
                               }
                               disabled={!isDraft}
-                              placeholder="Risk description"
-                              maxLength={1500}
-                              rows={2}
+                              placeholder="Risk title"
+                              maxLength={200}
+                            />
+
+                            <Input
+                              value={q.risk?.category ?? ""}
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  risk: {
+                                    ...(q.risk ?? {}),
+                                    category: e.target.value,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                              placeholder="Category"
+                              maxLength={100}
                             />
                           </div>
 
-                          <div className="grid sm:grid-cols-2 gap-3">
-                            <div>
-                              <Label className="text-xs">
-                                Recommended actions
-                              </Label>
-                              <Textarea
-                                value={(q.recommended_actions ?? []).join("\n")}
-                                onChange={(e) =>
-                                  editQuestion(sec.id, q.id, {
-                                    recommended_actions: e.target.value
-                                      .split("\n")
-                                      .map((x) => x.trim())
-                                      .filter(Boolean),
-                                  })
-                                }
-                                disabled={!isDraft}
-                                placeholder="One action per line"
-                                rows={4}
-                              />
-                            </div>
+                          <div className="grid sm:grid-cols-3 gap-2 mt-2">
+                            <Select
+                              value={q.risk?.severity ?? ""}
+                              onValueChange={(v) =>
+                                editQuestion(sec.id, q.id, {
+                                  risk: {
+                                    ...(q.risk ?? {}),
+                                    severity: v,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Severity" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Low">Low</SelectItem>
+                                <SelectItem value="Medium">Medium</SelectItem>
+                                <SelectItem value="High">High</SelectItem>
+                                <SelectItem value="Critical">
+                                  Critical
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
 
-                            <div>
-                              <Label className="text-xs">
-                                Expected evidence
-                              </Label>
-                              <Textarea
-                                value={(q.expected_evidence ?? []).join("\n")}
-                                onChange={(e) =>
-                                  editQuestion(sec.id, q.id, {
-                                    expected_evidence: e.target.value
-                                      .split("\n")
-                                      .map((x) => x.trim())
-                                      .filter(Boolean),
-                                  })
-                                }
-                                disabled={!isDraft}
-                                placeholder="One evidence item per line"
-                                rows={4}
-                              />
-                            </div>
+                            <Select
+                              value={q.risk?.likelihood ?? ""}
+                              onValueChange={(v) =>
+                                editQuestion(sec.id, q.id, {
+                                  risk: {
+                                    ...(q.risk ?? {}),
+                                    likelihood: v,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Likelihood" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Low">Low</SelectItem>
+                                <SelectItem value="Medium">Medium</SelectItem>
+                                <SelectItem value="High">High</SelectItem>
+                              </SelectContent>
+                            </Select>
+
+                            <Select
+                              value={q.risk?.impact ?? ""}
+                              onValueChange={(v) =>
+                                editQuestion(sec.id, q.id, {
+                                  risk: {
+                                    ...(q.risk ?? {}),
+                                    impact: v,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Impact" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Low">Low</SelectItem>
+                                <SelectItem value="Medium">Medium</SelectItem>
+                                <SelectItem value="High">High</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <Textarea
+                            className="mt-2"
+                            value={q.risk?.description ?? ""}
+                            onChange={(e) =>
+                              editQuestion(sec.id, q.id, {
+                                risk: {
+                                  ...(q.risk ?? {}),
+                                  description: e.target.value,
+                                },
+                              })
+                            }
+                            disabled={!isDraft}
+                            placeholder="Risk description"
+                            maxLength={1500}
+                            rows={2}
+                          />
+                        </div>
+
+                        <div className="grid sm:grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-xs">
+                              Recommended actions
+                            </Label>
+                            <Textarea
+                              value={(q.recommended_actions ?? []).join("\n")}
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  recommended_actions: e.target.value
+                                    .split("\n")
+                                    .map((x) => x.trim())
+                                    .filter(Boolean),
+                                })
+                              }
+                              disabled={!isDraft}
+                              placeholder="One action per line"
+                              rows={4}
+                            />
+                          </div>
+
+                          <div>
+                            <Label className="text-xs">
+                              Expected evidence
+                            </Label>
+                            <Textarea
+                              value={(q.expected_evidence ?? []).join("\n")}
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  expected_evidence: e.target.value
+                                    .split("\n")
+                                    .map((x) => x.trim())
+                                    .filter(Boolean),
+                                })
+                              }
+                              disabled={!isDraft}
+                              placeholder="One evidence item per line"
+                              rows={4}
+                            />
                           </div>
                         </div>
-                      )}
+                      </div>
                     </div>
                   </div>
                 </div>
