@@ -6,7 +6,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, CheckCircle2, Camera, Download } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Camera,
+  Download,
+  ClipboardList,
+  Lightbulb,
+} from "lucide-react";
 
 type FieldType =
   | "text"
@@ -52,6 +59,13 @@ interface Section {
   questions: Question[];
 }
 
+interface SurveySchema {
+  summary?: string;
+  auditor_objective?: string;
+  auditor_actions?: string[];
+  sections: Section[];
+}
+
 interface ComplianceAnswer {
   value?: string;
   comment?: string;
@@ -67,6 +81,14 @@ export const Route = createFileRoute("/_app/assigned/$id")({
     meta: [{ title: "Fill audit — AuditFlow" }],
   }),
 });
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => String(item ?? "").trim())
+    .filter(Boolean);
+}
 
 function hasReference(q: Question) {
   return Boolean(
@@ -99,7 +121,7 @@ function FillSurvey() {
   const [survey, setSurvey] = useState<{
     title: string;
     description: string | null;
-    sections: Section[];
+    schema: SurveySchema;
     mode: "compliance";
     pdf_path: string | null;
     starts_at: string | null;
@@ -113,7 +135,7 @@ function FillSurvey() {
   const [exporting, setExporting] = useState(false);
 
   const allQuestions = useMemo(
-    () => survey?.sections.flatMap((s) => s.questions) ?? [],
+    () => survey?.schema.sections.flatMap((s) => s.questions) ?? [],
     [survey]
   );
 
@@ -154,7 +176,12 @@ function FillSurvey() {
       setSurvey({
         title: s.title,
         description: s.description,
-        sections: sch.sections ?? [],
+        schema: {
+          summary: String(sch.summary ?? ""),
+          auditor_objective: String(sch.auditor_objective ?? ""),
+          auditor_actions: asStringArray(sch.auditor_actions),
+          sections: sch.sections ?? [],
+        },
         mode: "compliance",
         pdf_path: (s as any).pdf_path ?? null,
         starts_at: (s as any).starts_at ?? null,
@@ -392,6 +419,11 @@ function FillSurvey() {
     return <div className="p-6 text-muted-foreground">Loading…</div>;
   }
 
+  const hasAuditContext =
+    !!survey.schema.summary ||
+    !!survey.schema.auditor_objective ||
+    (survey.schema.auditor_actions?.length ?? 0) > 0;
+
   return (
     <div className="container mx-auto max-w-5xl py-8">
       <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -439,8 +471,61 @@ function FillSurvey() {
         )}
       </div>
 
+      {hasAuditContext && (
+        <div className="grid md:grid-cols-2 gap-4 mb-6">
+          <div
+            className="rounded-lg border bg-card p-5"
+            style={{ boxShadow: "var(--shadow-card)" }}
+          >
+            <div className="mb-3 flex items-center gap-2">
+              <ClipboardList className="h-5 w-5 text-muted-foreground" />
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Resumen y objetivo de la auditoría
+              </p>
+            </div>
+
+            {survey.schema.summary && (
+              <p className="text-sm text-muted-foreground mb-3">
+                {survey.schema.summary}
+              </p>
+            )}
+
+            {survey.schema.auditor_objective && (
+              <div className="rounded-md bg-muted/40 p-3 text-sm">
+                <span className="font-medium">Objetivo del auditor: </span>
+                {survey.schema.auditor_objective}
+              </div>
+            )}
+          </div>
+
+          <div
+            className="rounded-lg border bg-card p-5"
+            style={{ boxShadow: "var(--shadow-card)" }}
+          >
+            <div className="mb-3 flex items-center gap-2">
+              <Lightbulb className="h-5 w-5 text-muted-foreground" />
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Acciones sugeridas para el auditor
+              </p>
+            </div>
+
+            {(survey.schema.auditor_actions?.length ?? 0) > 0 ? (
+              <ul className="list-disc pl-5 text-sm text-muted-foreground space-y-1">
+                {survey.schema.auditor_actions!.map((action, idx) => (
+                  <li key={idx}>{action}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No se registraron acciones sugeridas.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="space-y-6">
-        {survey.sections.map((sec) => (
+        {survey.schema.sections.map((sec) => (
           <div
             key={sec.id}
             className="rounded-lg border bg-card p-6"
