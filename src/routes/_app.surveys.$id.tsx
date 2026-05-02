@@ -430,10 +430,25 @@ function SurveyEditor() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
+      const { data: refreshedSurvey, error: refreshError } = await supabase
+        .from("surveys")
+        .select("schema")
+        .eq("id", survey.id)
+        .single();
+
+      if (refreshError) throw refreshError;
+
+      const refreshedSchema = (refreshedSurvey?.schema as any) ?? {
+        sections: [],
+      };
+
+      const refreshedSections = (refreshedSchema.sections ?? []) as Section[];
+
+      const realQuestionCount = getQuestionCount(refreshedSections);
+      const realSectionCount = refreshedSections.length;
+
       toast.success(
-        `Extracted ${data.questions ?? 0} question(s) in ${
-          data.sections ?? 0
-        } section(s)`
+        `Extracted ${realQuestionCount} question(s) in ${realSectionCount} section(s)`
       );
 
       await load();
