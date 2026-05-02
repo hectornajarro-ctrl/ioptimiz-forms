@@ -409,7 +409,7 @@ function Surveys() {
             return (
               <div
                 key={s.id}
-                className="relative rounded-lg border border-border bg-card p-5 h-full min-h-[480px] flex flex-col transition-colors hover:border-accent"
+                className="relative rounded-lg border border-border bg-card p-5 h-full flex flex-col transition-colors hover:border-accent"
                 style={{ boxShadow: "var(--shadow-card)" }}
               >
                 <Link
@@ -445,7 +445,7 @@ function Surveys() {
                   )}
                 </Link>
 
-                <div className="mt-auto pt-4">
+                <div className="pt-4">
                   {isAdmin && (
                     <Link
                       to="/surveys/$id"
