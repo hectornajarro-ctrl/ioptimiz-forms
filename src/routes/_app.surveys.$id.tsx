@@ -29,6 +29,9 @@ import {
   BarChart3,
   CheckCircle2,
   Download,
+  ClipboardList,
+  ListChecks,
+  Lightbulb,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -86,6 +89,13 @@ interface Section {
   questions: Question[];
 }
 
+interface SurveySchema {
+  summary?: string;
+  auditor_objective?: string;
+  auditor_actions?: string[];
+  sections: Section[];
+}
+
 interface SurveyRow {
   id: string;
   title: string;
@@ -93,7 +103,7 @@ interface SurveyRow {
   status: "draft" | "approved" | "archived";
   mode: "compliance";
   pdf_path: string | null;
-  schema: { sections: Section[] };
+  schema: SurveySchema;
   assigned_group_id: string | null;
   lead_auditor_id: string;
   starts_at: string | null;
@@ -132,6 +142,14 @@ function fromLocalInput(v: string): string | null {
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => String(item ?? "").trim())
+    .filter(Boolean);
+}
+
 function SurveyEditor() {
   const { id } = Route.useParams();
   const { user, session, hasRole } = useAuth();
@@ -164,7 +182,12 @@ function SurveyEditor() {
     setSurvey({
       ...data,
       mode: "compliance",
-      schema: { sections: sch.sections ?? [] },
+      schema: {
+        summary: String(sch.summary ?? ""),
+        auditor_objective: String(sch.auditor_objective ?? ""),
+        auditor_actions: asStringArray(sch.auditor_actions),
+        sections: sch.sections ?? [],
+      },
       starts_at: (data as any).starts_at ?? null,
       ends_at: (data as any).ends_at ?? null,
     } as SurveyRow);
@@ -198,11 +221,28 @@ function SurveyEditor() {
   const isOwner = user?.id === survey.lead_auditor_id || hasRole("admin");
   const isDraft = survey.status === "draft";
 
+  const questionCount = survey.schema.sections.reduce(
+    (total, section) => total + section.questions.length,
+    0
+  );
+
+  const hasExtractionSummary =
+    !!survey.schema.summary ||
+    !!survey.schema.auditor_objective ||
+    questionCount > 0 ||
+    (survey.schema.auditor_actions?.length ?? 0) > 0;
+
   const updateField = (patch: Partial<SurveyRow>) =>
     setSurvey({ ...survey, ...patch });
 
   const updateSchema = (sections: Section[]) =>
-    setSurvey({ ...survey, schema: { sections } });
+    setSurvey({
+      ...survey,
+      schema: {
+        ...survey.schema,
+        sections,
+      },
+    });
 
   const persist = async () => {
     if (
@@ -268,7 +308,13 @@ function SurveyEditor() {
       return toast.error(error.message);
     }
 
-    await supabase.from("surveys").update({ pdf_path: path }).eq("id", survey.id);
+    await supabase
+      .from("surveys")
+      .update({
+        pdf_path: path,
+        mode: "compliance",
+      })
+      .eq("id", survey.id);
 
     setUploading(false);
 
@@ -291,7 +337,11 @@ function SurveyEditor() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      toast.success(`Extracted ${data.sections} section(s)`);
+      toast.success(
+        `Extracted ${data.questions ?? 0} question(s) in ${
+          data.sections ?? 0
+        } section(s)`
+      );
 
       await load();
     } catch (e) {
@@ -664,6 +714,84 @@ function SurveyEditor() {
               <Sparkles className="h-4 w-4 mr-2" />
               {extracting ? "Extracting with AI…" : "Extract with AI"}
             </Button>
+          </div>
+        </div>
+      )}
+
+      {hasExtractionSummary && (
+        <div className="grid md:grid-cols-3 gap-4 mb-6">
+          <div
+            className="rounded-lg border bg-card p-5"
+            style={{ boxShadow: "var(--shadow-card)" }}
+          >
+            <div className="mb-3 flex items-center gap-2">
+              <ClipboardList className="h-5 w-5 text-muted-foreground" />
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Resumen del PDF y objetivo
+              </p>
+            </div>
+
+            {survey.schema.summary ? (
+              <p className="text-sm text-muted-foreground mb-3">
+                {survey.schema.summary}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground mb-3">
+                No summary generated yet.
+              </p>
+            )}
+
+            {survey.schema.auditor_objective && (
+              <div className="rounded-md bg-muted/40 p-3 text-sm">
+                <span className="font-medium">Objetivo del auditor: </span>
+                {survey.schema.auditor_objective}
+              </div>
+            )}
+          </div>
+
+          <div
+            className="rounded-lg border bg-card p-5"
+            style={{ boxShadow: "var(--shadow-card)" }}
+          >
+            <div className="mb-3 flex items-center gap-2">
+              <ListChecks className="h-5 w-5 text-muted-foreground" />
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Preguntas encontradas
+              </p>
+            </div>
+
+            <div className="text-4xl font-semibold tracking-tight">
+              {questionCount}
+            </div>
+
+            <p className="text-sm text-muted-foreground mt-2">
+              Questions generated from the PDF and organized into{" "}
+              {survey.schema.sections.length} section(s).
+            </p>
+          </div>
+
+          <div
+            className="rounded-lg border bg-card p-5"
+            style={{ boxShadow: "var(--shadow-card)" }}
+          >
+            <div className="mb-3 flex items-center gap-2">
+              <Lightbulb className="h-5 w-5 text-muted-foreground" />
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Acciones sugeridas para el auditor
+              </p>
+            </div>
+
+            {(survey.schema.auditor_actions?.length ?? 0) > 0 ? (
+              <ul className="list-disc pl-5 text-sm text-muted-foreground space-y-1">
+                {survey.schema.auditor_actions!.map((action, idx) => (
+                  <li key={idx}>{action}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No suggested actions generated yet.
+              </p>
+            )}
           </div>
         </div>
       )}
