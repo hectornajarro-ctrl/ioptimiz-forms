@@ -26,6 +26,22 @@ const FORM_SCHEMA_TOOL = {
           type: "string",
           description: "One-sentence description of the audit",
         },
+        summary: {
+          type: "string",
+          description:
+            "Clear summary of what the PDF says, focused on what matters for the audit.",
+        },
+        auditor_objective: {
+          type: "string",
+          description:
+            "Main objective of the audit. Explain what the auditor must verify based on the PDF.",
+        },
+        auditor_actions: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Suggested practical actions the auditor should perform before or during the audit.",
+        },
         sections: {
           type: "array",
           items: {
@@ -299,10 +315,14 @@ Your task:
 11. Risks and actions may be professional suggestions based on the extracted requirement, but the requirement itself must come from the PDF.
 12. Always return questions with type = "yes_no".
 13. Return structured JSON only through the function tool.
+14. Also generate a summary of the PDF focused on the audit context.
+15. Also generate the main audit objective: what the auditor must verify.
+16. Also generate practical suggested actions for the auditor.
+17. The suggested actions must be concrete, for example: review documents, interview responsible people, inspect evidence, validate logs, verify approvals, check dates, confirm responsibilities or request missing records.
 `;
 
     const userInstruction =
-      "Extract a complete compliance audit questionnaire from this PDF. Include normative references, risks for findings, recommended actions and expected evidence for every question.";
+      "Extract a complete compliance audit questionnaire from this PDF. Include a PDF summary, audit objective, suggested auditor actions, normative references, risks for findings, recommended actions and expected evidence for every question.";
 
     const aiRes = await fetch(
       "https://ai.gateway.lovable.dev/v1/chat/completions",
@@ -414,6 +434,9 @@ Your task:
     const update: any = {
       mode: "compliance",
       schema: {
+        summary: String(args.summary ?? "").trim(),
+        auditor_objective: String(args.auditor_objective ?? "").trim(),
+        auditor_actions: asArray(args.auditor_actions),
         sections,
       },
     };
@@ -443,6 +466,9 @@ Your task:
         success: true,
         sections: sections.length,
         questions: questionCount,
+        has_summary: Boolean(update.schema.summary),
+        has_auditor_objective: Boolean(update.schema.auditor_objective),
+        auditor_actions: update.schema.auditor_actions.length,
       }),
       {
         headers: {
