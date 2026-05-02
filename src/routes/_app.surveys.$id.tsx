@@ -257,15 +257,23 @@ function SurveyEditor() {
     }
 
     const sch = (data.schema as any) ?? { sections: [] };
+    const sections = (sch.sections ?? []) as Section[];
+
+    const summary = String(sch.summary ?? "").trim();
+    const auditorObjective = String(sch.auditor_objective ?? "").trim();
+    const auditorActions = asStringArray(sch.auditor_actions);
 
     setSurvey({
       ...data,
       mode: "compliance",
       schema: {
-        summary: String(sch.summary ?? ""),
-        auditor_objective: String(sch.auditor_objective ?? ""),
-        auditor_actions: asStringArray(sch.auditor_actions),
-        sections: sch.sections ?? [],
+        summary: summary || buildFallbackSummary(sections),
+        auditor_objective: auditorObjective || buildFallbackObjective(sections),
+        auditor_actions:
+          auditorActions.length > 0
+            ? auditorActions
+            : deriveAuditorActions(sections),
+        sections,
       },
       starts_at: (data as any).starts_at ?? null,
       ends_at: (data as any).ends_at ?? null,
@@ -301,26 +309,12 @@ function SurveyEditor() {
   const isDraft = survey.status === "draft";
 
   const questionCount = getQuestionCount(survey.schema.sections);
-  const savedAuditorActions = asStringArray(survey.schema.auditor_actions);
-
-  const displaySummary =
-    survey.schema.summary?.trim() ||
-    buildFallbackSummary(survey.schema.sections);
-
-  const displayObjective =
-    survey.schema.auditor_objective?.trim() ||
-    buildFallbackObjective(survey.schema.sections);
-
-  const displayAuditorActions =
-    savedAuditorActions.length > 0
-      ? savedAuditorActions
-      : deriveAuditorActions(survey.schema.sections);
 
   const hasExtractionSummary =
-    !!displaySummary ||
-    !!displayObjective ||
+    !!survey.schema.summary ||
+    !!survey.schema.auditor_objective ||
     questionCount > 0 ||
-    displayAuditorActions.length > 0;
+    (survey.schema.auditor_actions?.length ?? 0) > 0;
 
   const updateField = (patch: Partial<SurveyRow>) =>
     setSurvey({ ...survey, ...patch });
@@ -331,6 +325,15 @@ function SurveyEditor() {
       schema: {
         ...survey.schema,
         sections,
+      },
+    });
+
+  const updateSchemaMeta = (patch: Partial<SurveySchema>) =>
+    setSurvey({
+      ...survey,
+      schema: {
+        ...survey.schema,
+        ...patch,
       },
     });
 
@@ -821,22 +824,39 @@ function SurveyEditor() {
               </p>
             </div>
 
-            {displaySummary ? (
-              <p className="text-sm text-muted-foreground mb-3">
-                {displaySummary}
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground mb-3">
-                Todavía no se generó un resumen.
-              </p>
-            )}
-
-            {displayObjective && (
-              <div className="rounded-md bg-muted/40 p-3 text-sm">
-                <span className="font-medium">Objetivo del auditor: </span>
-                {displayObjective}
+            <div className="space-y-3">
+              <div>
+                <Label className="text-xs">Resumen del PDF</Label>
+                <Textarea
+                  value={survey.schema.summary ?? ""}
+                  onChange={(e) =>
+                    updateSchemaMeta({
+                      summary: e.target.value,
+                    })
+                  }
+                  disabled={!isDraft}
+                  placeholder="Resumen del contenido del PDF orientado a la auditoría"
+                  rows={5}
+                  maxLength={4000}
+                />
               </div>
-            )}
+
+              <div>
+                <Label className="text-xs">Objetivo del auditor</Label>
+                <Textarea
+                  value={survey.schema.auditor_objective ?? ""}
+                  onChange={(e) =>
+                    updateSchemaMeta({
+                      auditor_objective: e.target.value,
+                    })
+                  }
+                  disabled={!isDraft}
+                  placeholder="Qué debe verificar el auditor durante la revisión"
+                  rows={4}
+                  maxLength={3000}
+                />
+              </div>
+            </div>
           </div>
 
           <div
@@ -858,6 +878,11 @@ function SurveyEditor() {
               Preguntas generadas desde el PDF y organizadas en{" "}
               {survey.schema.sections.length} sección(es).
             </p>
+
+            <p className="text-xs text-muted-foreground mt-4">
+              Este valor se actualiza automáticamente según la cantidad de
+              preguntas existentes en el Survey.
+            </p>
           </div>
 
           <div
@@ -871,17 +896,27 @@ function SurveyEditor() {
               </p>
             </div>
 
-            {displayAuditorActions.length > 0 ? (
-              <ul className="list-disc pl-5 text-sm text-muted-foreground space-y-1">
-                {displayAuditorActions.map((action, idx) => (
-                  <li key={idx}>{action}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Todavía no se generaron acciones sugeridas.
-              </p>
-            )}
+            <Label className="text-xs">Acciones sugeridas</Label>
+            <Textarea
+              value={(survey.schema.auditor_actions ?? []).join("\n")}
+              onChange={(e) =>
+                updateSchemaMeta({
+                  auditor_actions: e.target.value
+                    .split("\n")
+                    .map((x) => x.trim())
+                    .filter(Boolean),
+                })
+              }
+              disabled={!isDraft}
+              placeholder="Una acción por línea"
+              rows={11}
+              maxLength={6000}
+            />
+
+            <p className="text-xs text-muted-foreground mt-2">
+              Escribe una acción por línea. Estas acciones serán visibles para
+              los auditores asignados.
+            </p>
           </div>
         </div>
       )}
