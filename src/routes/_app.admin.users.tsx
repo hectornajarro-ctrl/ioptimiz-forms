@@ -80,10 +80,14 @@ function AdminUsers() {
     id: string;
     email: string;
     full_name: string;
+    password: string;
+    password_confirm: string;
   }>({
     id: "",
     email: "",
     full_name: "",
+    password: "",
+    password_confirm: "",
   });
 
   useEffect(() => {
@@ -206,6 +210,8 @@ function AdminUsers() {
       id: user.id,
       email: user.email ?? "",
       full_name: user.full_name ?? "",
+      password: "",
+      password_confirm: "",
     });
 
     setEditOpen(true);
@@ -214,6 +220,8 @@ function AdminUsers() {
   const updateUser = async () => {
     const email = editForm.email.trim().toLowerCase();
     const fullName = editForm.full_name.trim();
+    const password = editForm.password.trim();
+    const passwordConfirm = editForm.password_confirm.trim();
 
     if (!editForm.id) {
       return toast.error("User ID is required");
@@ -223,16 +231,37 @@ function AdminUsers() {
       return toast.error("Valid email is required");
     }
 
+    if (password || passwordConfirm) {
+      if (password.length < 6) {
+        return toast.error("Password must have at least 6 characters");
+      }
+
+      if (password !== passwordConfirm) {
+        return toast.error("Password confirmation does not match");
+      }
+    }
+
     setUpdating(true);
+
+    const body: {
+      userId: string;
+      email: string;
+      full_name: string;
+      password?: string;
+    } = {
+      userId: editForm.id,
+      email,
+      full_name: fullName,
+    };
+
+    if (password) {
+      body.password = password;
+    }
 
     const { data, error } = await supabase.functions.invoke(
       "admin-update-user",
       {
-        body: {
-          userId: editForm.id,
-          email,
-          full_name: fullName,
-        },
+        body,
       }
     );
 
@@ -241,13 +270,15 @@ function AdminUsers() {
     if (error) return toast.error(error.message);
     if (data?.error) return toast.error(data.error);
 
-    toast.success("User updated");
+    toast.success(password ? "User and password updated" : "User updated");
 
     setEditOpen(false);
     setEditForm({
       id: "",
       email: "",
       full_name: "",
+      password: "",
+      password_confirm: "",
     });
 
     load();
@@ -269,8 +300,8 @@ function AdminUsers() {
           </h1>
 
           <p className="text-muted-foreground">
-            Provision new accounts, edit user details and manage roles. Only
-            System Administrators can manage users.
+            Provision new accounts, edit user details, change passwords and
+            manage roles. Only System Administrators can manage users.
           </p>
         </div>
 
@@ -498,6 +529,54 @@ function AdminUsers() {
                 This updates the profile email and the Supabase Auth login
                 email.
               </p>
+            </div>
+
+            <div className="rounded-md border bg-muted/30 p-3">
+              <p className="text-sm font-medium mb-1">Change password</p>
+              <p className="text-xs text-muted-foreground mb-3">
+                Leave these fields empty if you do not want to change the
+                password.
+              </p>
+
+              <div className="grid gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-password">New password</Label>
+                  <Input
+                    id="edit-password"
+                    type="password"
+                    value={editForm.password}
+                    minLength={6}
+                    maxLength={128}
+                    autoComplete="new-password"
+                    onChange={(e) =>
+                      setEditForm({
+                        ...editForm,
+                        password: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-password-confirm">
+                    Confirm new password
+                  </Label>
+                  <Input
+                    id="edit-password-confirm"
+                    type="password"
+                    value={editForm.password_confirm}
+                    minLength={6}
+                    maxLength={128}
+                    autoComplete="new-password"
+                    onChange={(e) =>
+                      setEditForm({
+                        ...editForm,
+                        password_confirm: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
