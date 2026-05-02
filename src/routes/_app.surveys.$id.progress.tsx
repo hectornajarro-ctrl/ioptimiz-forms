@@ -7,6 +7,9 @@ import {
   CheckCircle2,
   Clock,
   Download,
+  Eye,
+  FileImage,
+  MessageSquare,
   ShieldAlert,
   Users,
 } from "lucide-react";
@@ -16,6 +19,7 @@ import { toast } from "sonner";
 interface Question {
   id: string;
   label?: string;
+  required?: boolean;
 }
 
 interface Section {
@@ -28,6 +32,17 @@ interface SurveySchema {
   sections?: Section[];
 }
 
+interface EvidenceFile {
+  path: string;
+  name: string;
+}
+
+interface ComplianceAnswer {
+  value?: string;
+  comment?: string;
+  evidence?: EvidenceFile;
+}
+
 interface Member {
   id: string;
   email: string;
@@ -36,6 +51,7 @@ interface Member {
   answered_questions: number;
   total_questions: number;
   submitted: boolean;
+  answers: Record<string, ComplianceAnswer>;
 }
 
 interface SurveyProgressRow {
@@ -78,11 +94,7 @@ function isAnswered(value: unknown): boolean {
   }
 
   if (typeof value === "object") {
-    const answer = value as {
-      value?: unknown;
-      comment?: unknown;
-      evidence?: unknown;
-    };
+    const answer = value as ComplianceAnswer;
 
     if (answer.value === undefined || answer.value === null) return false;
 
@@ -97,13 +109,35 @@ function isAnswered(value: unknown): boolean {
 }
 
 function countAnsweredQuestions(
-  answers: Record<string, unknown> | null | undefined,
+  answers: Record<string, ComplianceAnswer> | null | undefined,
   questionIds: string[]
 ): number {
   if (!answers || questionIds.length === 0) return 0;
 
   return questionIds.filter((questionId) => isAnswered(answers[questionId]))
     .length;
+}
+
+function normalizeAnswers(value: unknown): Record<string, ComplianceAnswer> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  return value as Record<string, ComplianceAnswer>;
+}
+
+function answerBadgeClass(value?: string) {
+  if (value === "Yes") {
+    return "border-success/30 bg-success/10 text-success";
+  }
+
+  if (value === "No") {
+    return "border-destructive/30 bg-destructive/10 text-destructive";
+  }
+
+  if (value === "N/A") {
+    return "border-muted-foreground/30 bg-muted text-muted-foreground";
+  }
+
+  return "border-border bg-background text-muted-foreground";
 }
 
 function SurveyProgress() {
@@ -116,8 +150,14 @@ function SurveyProgress() {
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [exportingId, setExportingId] = useState<string | null>(null);
+  const [openingEvidence, setOpeningEvidence] = useState<string | null>(null);
 
   const isAdmin = hasRole("admin");
+
+  const questionIds = useMemo(
+    () => getQuestionIds(survey?.schema),
+    [survey?.schema]
+  );
 
   const stats = useMemo(() => {
     const total = members.length;
@@ -155,6 +195,22 @@ function SurveyProgress() {
         ? Math.round((answeredQuestions / possibleQuestions) * 100)
         : 0;
 
+    const findings = members.reduce((sum, member) => {
+      return (
+        sum +
+        questionIds.filter((questionId) => member.answers[questionId]?.value === "No")
+          .length
+      );
+    }, 0);
+
+    const evidenceCount = members.reduce((sum, member) => {
+      return (
+        sum +
+        questionIds.filter((questionId) => !!member.answers[questionId]?.evidence)
+          .length
+      );
+    }, 0);
+
     return {
       total,
       submitted,
@@ -166,9 +222,11 @@ function SurveyProgress() {
       answeredQuestions,
       possibleQuestions,
       answeredPct,
+      findings,
+      evidenceCount,
       allDone: total > 0 && submitted === total,
     };
-  }, [members]);
+  }, [members, questionIds]);
 
   const exportMember = async (memberId: string) => {
     setExportingId(memberId);
@@ -196,6 +254,34 @@ function SurveyProgress() {
       toast.error(e instanceof Error ? e.message : "Export failed");
     } finally {
       setExportingId(null);
+    }
+  };
+
+  const openEvidenceFile = async (evidence: EvidenceFile) => {
+    if (!evidence.path) return;
+
+    setOpeningEvidence(evidence.path);
+
+    try {
+      const { data, error } = await supabase.storage
+        .from("response-files")
+        .createSignedUrl(evidence.path, 60 * 10);
+
+      if (error) throw error;
+
+      if (data?.signedUrl) {
+        window.open(data.signedUrl, "_blank");
+      } else {
+        toast.error("Could not open evidence file");
+      }
+    } catch (e) {
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : "Could not open evidence file. Check storage permissions."
+      );
+    } finally {
+      setOpeningEvidence(null);
     }
   };
 
@@ -237,8 +323,8 @@ function SurveyProgress() {
         return;
       }
 
-      const questionIds = getQuestionIds(surveyRow.schema);
-      const totalQuestions = questionIds.length;
+      const currentQuestionIds = getQuestionIds(surveyRow.schema);
+      const totalQuestions = currentQuestionIds.length;
 
       const { data: groupMembers, error: membersError } = await supabase
         .from("audit_group_members")
@@ -283,7 +369,7 @@ function SurveyProgress() {
           {
             storedProgress: Number(r.progress ?? 0),
             submitted: Boolean(r.submitted),
-            answers: (r.answers ?? {}) as Record<string, unknown>,
+            answers: normalizeAnswers(r.answers),
           },
         ])
       );
@@ -291,9 +377,10 @@ function SurveyProgress() {
       setMembers(
         (profiles ?? []).map((p) => {
           const response = respMap.get(p.id);
+          const answers = response?.answers ?? {};
           const answeredQuestions = countAnsweredQuestions(
-            response?.answers,
-            questionIds
+            answers,
+            currentQuestionIds
           );
 
           const calculatedProgress =
@@ -309,6 +396,7 @@ function SurveyProgress() {
             answered_questions: answeredQuestions,
             total_questions: totalQuestions,
             submitted: Boolean(response?.submitted),
+            answers,
           };
         })
       );
@@ -349,7 +437,7 @@ function SurveyProgress() {
   }
 
   return (
-    <div className="container mx-auto max-w-5xl py-8">
+    <div className="container mx-auto max-w-6xl py-8">
       <div className="mb-6">
         <Button variant="ghost" size="sm" asChild>
           <Link to="/surveys">
@@ -369,8 +457,8 @@ function SurveyProgress() {
 
         <p className="text-muted-foreground mt-1">
           {isAdmin
-            ? "Admin view of member auditor completion for this form."
-            : "Live view of every member auditor's completion for your form."}
+            ? "Admin view of member auditor completion and collected audit evidence."
+            : "Live view of each member auditor's progress, answers, findings and evidence."}
         </p>
 
         <p className="text-sm text-muted-foreground mt-2">
@@ -447,16 +535,16 @@ function SurveyProgress() {
               style={{ boxShadow: "var(--shadow-card)" }}
             >
               <div className="flex items-center gap-2 text-muted-foreground text-xs uppercase tracking-wide font-semibold mb-2">
-                <Clock className="h-4 w-4" />
-                Avg. answered
+                <FileImage className="h-4 w-4" />
+                Evidence / findings
               </div>
 
               <div className="text-3xl font-semibold">
-                {stats.avgProgress}%
+                {stats.evidenceCount}
               </div>
 
               <p className="text-xs text-muted-foreground mt-2">
-                Average answered questions per auditor.
+                Evidence files collected. Findings marked No: {stats.findings}.
               </p>
             </div>
           </div>
@@ -498,67 +586,196 @@ function SurveyProgress() {
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-4">
             {members.map((m) => (
               <div
                 key={m.id}
-                className="rounded-lg border bg-card p-4 flex flex-wrap items-center gap-3"
+                className="rounded-lg border bg-card p-4"
                 style={{ boxShadow: "var(--shadow-card)" }}
               >
-                <div className="flex-1 min-w-64">
-                  <div className="font-medium">{m.full_name || m.email}</div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex-1 min-w-64">
+                    <div className="font-medium">{m.full_name || m.email}</div>
 
-                  <div className="text-sm text-muted-foreground">{m.email}</div>
-                </div>
-
-                <div className="w-full sm:w-56">
-                  <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                    <span>
-                      {m.answered_questions} / {m.total_questions} answered
-                    </span>
-                    <span>{Math.round(m.progress)}%</span>
+                    <div className="text-sm text-muted-foreground">
+                      {m.email}
+                    </div>
                   </div>
 
-                  <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                    <div
-                      className={`h-full ${
-                        m.progress === 100 ? "bg-success" : "bg-accent"
-                      }`}
-                      style={{
-                        width: `${Math.round(m.progress)}%`,
-                      }}
-                    />
+                  <div className="w-full sm:w-56">
+                    <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                      <span>
+                        {m.answered_questions} / {m.total_questions} answered
+                      </span>
+                      <span>{Math.round(m.progress)}%</span>
+                    </div>
+
+                    <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                      <div
+                        className={`h-full ${
+                          m.progress === 100 ? "bg-success" : "bg-accent"
+                        }`}
+                        style={{
+                          width: `${Math.round(m.progress)}%`,
+                        }}
+                      />
+                    </div>
                   </div>
+
+                  <div className="w-32 text-right">
+                    {m.submitted ? (
+                      <span className="inline-flex items-center gap-1 text-success text-sm">
+                        <CheckCircle2 className="h-4 w-4" />
+                        Submitted
+                      </span>
+                    ) : m.progress > 0 ? (
+                      <span className="inline-flex items-center gap-1 text-muted-foreground text-sm">
+                        <Clock className="h-4 w-4" />
+                        In progress
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-muted-foreground text-sm">
+                        <Clock className="h-4 w-4" />
+                        Pending
+                      </span>
+                    )}
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => exportMember(m.id)}
+                    disabled={exportingId === m.id}
+                  >
+                    <Download className="h-4 w-4 mr-1" />
+                    {exportingId === m.id ? "…" : "Export"}
+                  </Button>
                 </div>
 
-                <div className="w-32 text-right">
-                  {m.submitted ? (
-                    <span className="inline-flex items-center gap-1 text-success text-sm">
-                      <CheckCircle2 className="h-4 w-4" />
-                      Submitted
-                    </span>
-                  ) : m.progress > 0 ? (
-                    <span className="inline-flex items-center gap-1 text-muted-foreground text-sm">
-                      <Clock className="h-4 w-4" />
-                      In progress
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-muted-foreground text-sm">
-                      <Clock className="h-4 w-4" />
-                      Pending
-                    </span>
-                  )}
-                </div>
+                <details className="mt-4 rounded-md border bg-muted/20">
+                  <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium">
+                    View collected answers, findings and evidence
+                  </summary>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => exportMember(m.id)}
-                  disabled={exportingId === m.id}
-                >
-                  <Download className="h-4 w-4 mr-1" />
-                  {exportingId === m.id ? "…" : "Export"}
-                </Button>
+                  <div className="border-t p-4 space-y-5">
+                    {(survey?.schema?.sections ?? []).map((section) => (
+                      <div key={section.id} className="space-y-3">
+                        <h3 className="font-semibold tracking-tight">
+                          {section.title}
+                        </h3>
+
+                        {(section.questions ?? []).map((question, index) => {
+                          const answer = m.answers[question.id];
+                          const hasAnswer = isAnswered(answer);
+                          const value = answer?.value;
+                          const hasComment = !!answer?.comment?.trim();
+                          const hasEvidence = !!answer?.evidence?.path;
+
+                          return (
+                            <div
+                              key={question.id}
+                              className="rounded-md border bg-background p-3"
+                            >
+                              <div className="flex flex-wrap items-start gap-3">
+                                <div className="text-xs text-muted-foreground mt-1 w-6">
+                                  {index + 1}.
+                                </div>
+
+                                <div className="flex-1 min-w-64">
+                                  <div className="text-sm font-medium">
+                                    {question.label}
+                                    {question.required && (
+                                      <span className="text-destructive ml-1">
+                                        *
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    {hasAnswer ? (
+                                      <span
+                                        className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${answerBadgeClass(
+                                          value
+                                        )}`}
+                                      >
+                                        Answer: {value}
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">
+                                        Not answered
+                                      </span>
+                                    )}
+
+                                    {value === "No" && (
+                                      <span className="inline-flex rounded-full border border-destructive/30 bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive">
+                                        Finding
+                                      </span>
+                                    )}
+
+                                    {hasEvidence && (
+                                      <span className="inline-flex rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">
+                                        Evidence attached
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {hasComment && (
+                                    <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
+                                      <div className="mb-1 flex items-center gap-1 font-medium">
+                                        <MessageSquare className="h-4 w-4" />
+                                        Comment / finding details
+                                      </div>
+
+                                      <p className="text-muted-foreground whitespace-pre-wrap">
+                                        {answer.comment}
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {answer?.evidence && (
+                                    <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
+                                      <div className="mb-2 flex items-center gap-1 font-medium">
+                                        <FileImage className="h-4 w-4" />
+                                        Evidence
+                                      </div>
+
+                                      <div className="flex flex-wrap items-center gap-3">
+                                        <span className="text-muted-foreground">
+                                          {answer.evidence.name ||
+                                            answer.evidence.path
+                                              .split("/")
+                                              .pop()}
+                                        </span>
+
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() =>
+                                            openEvidenceFile(answer.evidence!)
+                                          }
+                                          disabled={
+                                            openingEvidence ===
+                                            answer.evidence.path
+                                          }
+                                        >
+                                          <Eye className="h-4 w-4 mr-1" />
+                                          {openingEvidence ===
+                                          answer.evidence.path
+                                            ? "Opening…"
+                                            : "Open evidence"}
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </details>
               </div>
             ))}
           </div>
