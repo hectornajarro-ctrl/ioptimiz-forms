@@ -150,6 +150,85 @@ function asStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    const clean = value.trim();
+    const key = clean.toLowerCase();
+
+    if (clean && !seen.has(key)) {
+      seen.add(key);
+      result.push(clean);
+    }
+  }
+
+  return result;
+}
+
+function getQuestionCount(sections: Section[]): number {
+  return sections.reduce(
+    (total, section) => total + section.questions.length,
+    0
+  );
+}
+
+function buildFallbackSummary(sections: Section[]): string {
+  const questionCount = getQuestionCount(sections);
+
+  if (questionCount === 0) return "";
+
+  const sectionTitles = sections
+    .map((section) => section.title)
+    .filter(Boolean)
+    .slice(0, 5);
+
+  const topics =
+    sectionTitles.length > 0
+      ? ` Los principales temas identificados son: ${sectionTitles.join(", ")}.`
+      : "";
+
+  return `El PDF fue procesado como documento de auditoría de cumplimiento. Se identificaron ${questionCount} pregunta(s) auditable(s) organizadas en ${sections.length} sección(es).${topics}`;
+}
+
+function buildFallbackObjective(sections: Section[]): string {
+  const questionCount = getQuestionCount(sections);
+
+  if (questionCount === 0) return "";
+
+  return "Verificar que la organización cumpla con los requisitos identificados en el PDF, revisando evidencias, responsables, registros y controles asociados a cada pregunta de auditoría.";
+}
+
+function deriveAuditorActions(sections: Section[]): string[] {
+  const actions: string[] = [];
+
+  sections.forEach((section) => {
+    section.questions.forEach((question) => {
+      actions.push(...asStringArray(question.recommended_actions));
+    });
+  });
+
+  const uniqueActions = uniqueStrings(actions).slice(0, 8);
+
+  if (uniqueActions.length > 0) {
+    return uniqueActions;
+  }
+
+  if (getQuestionCount(sections) === 0) {
+    return [];
+  }
+
+  return [
+    "Revisar el documento normativo y confirmar el alcance de la auditoría.",
+    "Solicitar políticas, procedimientos y registros relacionados con los requisitos identificados.",
+    "Entrevistar a los responsables de los procesos auditados.",
+    "Validar evidencias documentales, fechas, aprobaciones y responsables.",
+    "Registrar los hallazgos cuando una respuesta sea No o exista evidencia insuficiente.",
+    "Definir acciones correctivas para cada incumplimiento identificado.",
+  ];
+}
+
 function SurveyEditor() {
   const { id } = Route.useParams();
   const { user, session, hasRole } = useAuth();
@@ -221,16 +300,27 @@ function SurveyEditor() {
   const isOwner = user?.id === survey.lead_auditor_id || hasRole("admin");
   const isDraft = survey.status === "draft";
 
-  const questionCount = survey.schema.sections.reduce(
-    (total, section) => total + section.questions.length,
-    0
-  );
+  const questionCount = getQuestionCount(survey.schema.sections);
+  const savedAuditorActions = asStringArray(survey.schema.auditor_actions);
+
+  const displaySummary =
+    survey.schema.summary?.trim() ||
+    buildFallbackSummary(survey.schema.sections);
+
+  const displayObjective =
+    survey.schema.auditor_objective?.trim() ||
+    buildFallbackObjective(survey.schema.sections);
+
+  const displayAuditorActions =
+    savedAuditorActions.length > 0
+      ? savedAuditorActions
+      : deriveAuditorActions(survey.schema.sections);
 
   const hasExtractionSummary =
-    !!survey.schema.summary ||
-    !!survey.schema.auditor_objective ||
+    !!displaySummary ||
+    !!displayObjective ||
     questionCount > 0 ||
-    (survey.schema.auditor_actions?.length ?? 0) > 0;
+    displayAuditorActions.length > 0;
 
   const updateField = (patch: Partial<SurveyRow>) =>
     setSurvey({ ...survey, ...patch });
@@ -731,20 +821,20 @@ function SurveyEditor() {
               </p>
             </div>
 
-            {survey.schema.summary ? (
+            {displaySummary ? (
               <p className="text-sm text-muted-foreground mb-3">
-                {survey.schema.summary}
+                {displaySummary}
               </p>
             ) : (
               <p className="text-sm text-muted-foreground mb-3">
-                No summary generated yet.
+                Todavía no se generó un resumen.
               </p>
             )}
 
-            {survey.schema.auditor_objective && (
+            {displayObjective && (
               <div className="rounded-md bg-muted/40 p-3 text-sm">
                 <span className="font-medium">Objetivo del auditor: </span>
-                {survey.schema.auditor_objective}
+                {displayObjective}
               </div>
             )}
           </div>
@@ -765,8 +855,8 @@ function SurveyEditor() {
             </div>
 
             <p className="text-sm text-muted-foreground mt-2">
-              Questions generated from the PDF and organized into{" "}
-              {survey.schema.sections.length} section(s).
+              Preguntas generadas desde el PDF y organizadas en{" "}
+              {survey.schema.sections.length} sección(es).
             </p>
           </div>
 
@@ -781,15 +871,15 @@ function SurveyEditor() {
               </p>
             </div>
 
-            {(survey.schema.auditor_actions?.length ?? 0) > 0 ? (
+            {displayAuditorActions.length > 0 ? (
               <ul className="list-disc pl-5 text-sm text-muted-foreground space-y-1">
-                {survey.schema.auditor_actions!.map((action, idx) => (
+                {displayAuditorActions.map((action, idx) => (
                   <li key={idx}>{action}</li>
                 ))}
               </ul>
             ) : (
               <p className="text-sm text-muted-foreground">
-                No suggested actions generated yet.
+                Todavía no se generaron acciones sugeridas.
               </p>
             )}
           </div>
