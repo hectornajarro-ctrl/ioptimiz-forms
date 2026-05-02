@@ -13,11 +13,28 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
+interface Question {
+  id: string;
+  label?: string;
+}
+
+interface Section {
+  id: string;
+  title: string;
+  questions: Question[];
+}
+
+interface SurveySchema {
+  sections?: Section[];
+}
+
 interface Member {
   id: string;
   email: string;
   full_name: string | null;
   progress: number;
+  answered_questions: number;
+  total_questions: number;
   submitted: boolean;
 }
 
@@ -25,6 +42,7 @@ interface SurveyProgressRow {
   title: string;
   assigned_group_id: string | null;
   lead_auditor_id: string;
+  schema: SurveySchema | null;
 }
 
 export const Route = createFileRoute("/_app/surveys/$id/progress")({
@@ -33,6 +51,60 @@ export const Route = createFileRoute("/_app/surveys/$id/progress")({
     meta: [{ title: "Survey progress — AuditFlow" }],
   }),
 });
+
+function getQuestionIds(schema: SurveySchema | null | undefined): string[] {
+  const sections = schema?.sections ?? [];
+
+  return sections.flatMap((section) =>
+    (section.questions ?? [])
+      .map((question) => question.id)
+      .filter(Boolean)
+  );
+}
+
+function isAnswered(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  if (typeof value === "object") {
+    const answer = value as {
+      value?: unknown;
+      comment?: unknown;
+      evidence?: unknown;
+    };
+
+    if (answer.value === undefined || answer.value === null) return false;
+
+    if (typeof answer.value === "string") {
+      return answer.value.trim().length > 0;
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+function countAnsweredQuestions(
+  answers: Record<string, unknown> | null | undefined,
+  questionIds: string[]
+): number {
+  if (!answers || questionIds.length === 0) return 0;
+
+  return questionIds.filter((questionId) => isAnswered(answers[questionId]))
+    .length;
+}
 
 function SurveyProgress() {
   const { id } = Route.useParams();
@@ -66,6 +138,23 @@ function SurveyProgress() {
           )
         : 0;
 
+    const totalQuestions = members[0]?.total_questions ?? 0;
+
+    const answeredQuestions = members.reduce(
+      (sum, member) => sum + member.answered_questions,
+      0
+    );
+
+    const possibleQuestions = members.reduce(
+      (sum, member) => sum + member.total_questions,
+      0
+    );
+
+    const answeredPct =
+      possibleQuestions > 0
+        ? Math.round((answeredQuestions / possibleQuestions) * 100)
+        : 0;
+
     return {
       total,
       submitted,
@@ -73,6 +162,10 @@ function SurveyProgress() {
       notStarted,
       submittedPct,
       avgProgress,
+      totalQuestions,
+      answeredQuestions,
+      possibleQuestions,
+      answeredPct,
       allDone: total > 0 && submitted === total,
     };
   }, [members]);
@@ -115,7 +208,7 @@ function SurveyProgress() {
 
       const { data: s, error: surveyError } = await supabase
         .from("surveys")
-        .select("title,assigned_group_id,lead_auditor_id")
+        .select("title,assigned_group_id,lead_auditor_id,schema")
         .eq("id", id)
         .single();
 
@@ -126,7 +219,6 @@ function SurveyProgress() {
       }
 
       const surveyRow = s as SurveyProgressRow;
-
       const canView = isAdmin || surveyRow.lead_auditor_id === user.id;
 
       if (!canView) {
@@ -144,6 +236,9 @@ function SurveyProgress() {
         setLoading(false);
         return;
       }
+
+      const questionIds = getQuestionIds(surveyRow.schema);
+      const totalQuestions = questionIds.length;
 
       const { data: groupMembers, error: membersError } = await supabase
         .from("audit_group_members")
@@ -172,7 +267,7 @@ function SurveyProgress() {
             .in("id", memberIds),
           supabase
             .from("survey_responses")
-            .select("user_id,progress,submitted")
+            .select("user_id,progress,submitted,answers")
             .eq("survey_id", id),
         ]);
 
@@ -186,8 +281,9 @@ function SurveyProgress() {
         (responses ?? []).map((r) => [
           r.user_id,
           {
-            progress: Number(r.progress ?? 0),
+            storedProgress: Number(r.progress ?? 0),
             submitted: Boolean(r.submitted),
+            answers: (r.answers ?? {}) as Record<string, unknown>,
           },
         ])
       );
@@ -195,12 +291,23 @@ function SurveyProgress() {
       setMembers(
         (profiles ?? []).map((p) => {
           const response = respMap.get(p.id);
+          const answeredQuestions = countAnsweredQuestions(
+            response?.answers,
+            questionIds
+          );
+
+          const calculatedProgress =
+            totalQuestions > 0
+              ? Math.round((answeredQuestions / totalQuestions) * 100)
+              : Number(response?.storedProgress ?? 0);
 
           return {
             id: p.id,
             email: p.email,
             full_name: p.full_name,
-            progress: Number(response?.progress ?? 0),
+            progress: calculatedProgress,
+            answered_questions: answeredQuestions,
+            total_questions: totalQuestions,
             submitted: Boolean(response?.submitted),
           };
         })
@@ -217,7 +324,11 @@ function SurveyProgress() {
   if (forbidden) {
     return (
       <div className="container mx-auto max-w-5xl py-8">
-        <Button variant="ghost" size="sm" onClick={() => navigate({ to: "/surveys" })}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate({ to: "/surveys" })}
+        >
           <ArrowLeft className="h-4 w-4 mr-1" />
           Back to surveys
         </Button>
@@ -260,6 +371,14 @@ function SurveyProgress() {
           {isAdmin
             ? "Admin view of member auditor completion for this form."
             : "Live view of every member auditor's completion for your form."}
+        </p>
+
+        <p className="text-sm text-muted-foreground mt-2">
+          Progress is calculated from answered questions:{" "}
+          <span className="font-medium">
+            answered questions / total questions
+          </span>
+          .
         </p>
       </div>
 
@@ -310,13 +429,16 @@ function SurveyProgress() {
             >
               <div className="flex items-center gap-2 text-muted-foreground text-xs uppercase tracking-wide font-semibold mb-2">
                 <Clock className="h-4 w-4" />
-                In progress
+                Answered
               </div>
 
-              <div className="text-3xl font-semibold">{stats.inProgress}</div>
+              <div className="text-3xl font-semibold">
+                {stats.answeredPct}%
+              </div>
 
               <p className="text-xs text-muted-foreground mt-2">
-                Started but not submitted.
+                {stats.answeredQuestions} / {stats.possibleQuestions} total
+                answers.
               </p>
             </div>
 
@@ -326,7 +448,7 @@ function SurveyProgress() {
             >
               <div className="flex items-center gap-2 text-muted-foreground text-xs uppercase tracking-wide font-semibold mb-2">
                 <Clock className="h-4 w-4" />
-                Avg. progress
+                Avg. answered
               </div>
 
               <div className="text-3xl font-semibold">
@@ -334,7 +456,7 @@ function SurveyProgress() {
               </div>
 
               <p className="text-xs text-muted-foreground mt-2">
-                Average form completion.
+                Average answered questions per auditor.
               </p>
             </div>
           </div>
@@ -348,7 +470,7 @@ function SurveyProgress() {
                 {stats.allDone ? (
                   <span className="inline-flex items-center gap-1 text-success">
                     <CheckCircle2 className="h-4 w-4" />
-                    All members completed
+                    All members submitted
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 text-muted-foreground">
@@ -359,17 +481,18 @@ function SurveyProgress() {
               </div>
 
               <div className="text-muted-foreground">
-                {stats.submitted} / {stats.total} submitted
+                {stats.answeredQuestions} / {stats.possibleQuestions} questions
+                answered
               </div>
             </div>
 
             <div className="h-3 rounded-full bg-secondary overflow-hidden">
               <div
                 className={`h-full transition-all ${
-                  stats.allDone ? "bg-success" : "bg-accent"
+                  stats.answeredPct === 100 ? "bg-success" : "bg-accent"
                 }`}
                 style={{
-                  width: `${stats.submittedPct}%`,
+                  width: `${stats.answeredPct}%`,
                 }}
               />
             </div>
@@ -388,16 +511,18 @@ function SurveyProgress() {
                   <div className="text-sm text-muted-foreground">{m.email}</div>
                 </div>
 
-                <div className="w-full sm:w-48">
+                <div className="w-full sm:w-56">
                   <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                    <span>{m.submitted ? "Submitted" : "Progress"}</span>
+                    <span>
+                      {m.answered_questions} / {m.total_questions} answered
+                    </span>
                     <span>{Math.round(m.progress)}%</span>
                   </div>
 
                   <div className="h-2 rounded-full bg-secondary overflow-hidden">
                     <div
                       className={`h-full ${
-                        m.submitted ? "bg-success" : "bg-accent"
+                        m.progress === 100 ? "bg-success" : "bg-accent"
                       }`}
                       style={{
                         width: `${Math.round(m.progress)}%`,
@@ -411,6 +536,11 @@ function SurveyProgress() {
                     <span className="inline-flex items-center gap-1 text-success text-sm">
                       <CheckCircle2 className="h-4 w-4" />
                       Submitted
+                    </span>
+                  ) : m.progress > 0 ? (
+                    <span className="inline-flex items-center gap-1 text-muted-foreground text-sm">
+                      <Clock className="h-4 w-4" />
+                      In progress
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 text-muted-foreground text-sm">
