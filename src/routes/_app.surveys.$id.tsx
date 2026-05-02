@@ -32,6 +32,7 @@ import {
   ClipboardList,
   ListChecks,
   Lightbulb,
+  Eye,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -241,6 +242,7 @@ function SurveyEditor() {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [openingPdf, setOpeningPdf] = useState(false);
 
   const load = async () => {
     const { data, error } = await supabase
@@ -336,6 +338,30 @@ function SurveyEditor() {
         ...patch,
       },
     });
+
+  const openSourcePdf = async () => {
+    if (!survey.pdf_path) return toast.error("No PDF uploaded");
+
+    setOpeningPdf(true);
+
+    try {
+      const { data, error } = await supabase.storage
+        .from("survey-pdfs")
+        .createSignedUrl(survey.pdf_path, 60 * 10);
+
+      if (error) throw error;
+
+      if (!data?.signedUrl) {
+        throw new Error("Could not create PDF link");
+      }
+
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not open PDF");
+    } finally {
+      setOpeningPdf(false);
+    }
+  };
 
   const persist = async () => {
     if (
@@ -775,7 +801,7 @@ function SurveyEditor() {
         </div>
       </div>
 
-      {isDraft && (
+      {(isDraft || survey.pdf_path) && (
         <div
           className="rounded-lg border bg-card p-6 mb-6"
           style={{ boxShadow: "var(--shadow-card)" }}
@@ -783,45 +809,59 @@ function SurveyEditor() {
           <h2 className="font-semibold tracking-tight mb-1">Source PDF</h2>
 
           <p className="text-sm text-muted-foreground mb-4">
-            Upload a PDF checklist, regulation, standard or policy. AI will
-            generate audit questions, normative references, risks, recommended
-            actions and expected evidence.
+            Upload a PDF checklist, regulation, standard or policy. The uploaded
+            PDF will remain attached to this Survey and can be viewed later.
           </p>
 
           <div className="flex flex-wrap items-center gap-3">
-            <label className="cursor-pointer">
-              <input
-                type="file"
-                accept="application/pdf"
-                className="hidden"
-                onChange={(e) =>
-                  e.target.files?.[0] && onUpload(e.target.files[0])
-                }
-              />
+            {isDraft && (
+              <label className="cursor-pointer">
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  className="hidden"
+                  onChange={(e) =>
+                    e.target.files?.[0] && onUpload(e.target.files[0])
+                  }
+                />
 
-              <span className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
-                <Upload className="h-4 w-4" />
-                {uploading
-                  ? "Uploading…"
-                  : survey.pdf_path
-                    ? "Replace PDF"
-                    : "Upload PDF"}
-              </span>
-            </label>
-
-            {survey.pdf_path && (
-              <span className="text-xs text-muted-foreground truncate max-w-xs">
-                {survey.pdf_path.split("/").pop()}
-              </span>
+                <span className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
+                  <Upload className="h-4 w-4" />
+                  {uploading
+                    ? "Uploading…"
+                    : survey.pdf_path
+                      ? "Replace PDF"
+                      : "Upload PDF"}
+                </span>
+              </label>
             )}
 
-            <Button
-              onClick={runExtract}
-              disabled={!survey.pdf_path || extracting}
-            >
-              <Sparkles className="h-4 w-4 mr-2" />
-              {extracting ? "Extracting with AI…" : "Extract with AI"}
-            </Button>
+            {survey.pdf_path && (
+              <>
+                <span className="text-xs text-muted-foreground truncate max-w-xs">
+                  {survey.pdf_path.split("/").pop()}
+                </span>
+
+                <Button
+                  variant="outline"
+                  onClick={openSourcePdf}
+                  disabled={openingPdf}
+                >
+                  <Eye className="h-4 w-4 mr-2" />
+                  {openingPdf ? "Opening…" : "View PDF"}
+                </Button>
+              </>
+            )}
+
+            {isDraft && (
+              <Button
+                onClick={runExtract}
+                disabled={!survey.pdf_path || extracting}
+              >
+                <Sparkles className="h-4 w-4 mr-2" />
+                {extracting ? "Extracting with AI…" : "Extract with AI"}
+              </Button>
+            )}
           </div>
         </div>
       )}
