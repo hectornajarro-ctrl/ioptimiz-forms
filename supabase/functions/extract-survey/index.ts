@@ -14,33 +14,33 @@ const FORM_SCHEMA_TOOL = {
   function: {
     name: "build_form_schema",
     description:
-      "Convert an audit, checklist, regulation, policy or standard PDF into a structured compliance audit form schema with sections, questions, normative references, risks, recommended actions and expected evidence.",
+      "Convert an audit, checklist, regulation, policy or standard PDF into a structured compliance audit form schema with summary, audit objective, auditor actions, sections, questions, normative references, risks, recommended actions and expected evidence.",
     parameters: {
       type: "object",
       properties: {
         title: {
           type: "string",
-          description: "Title of the survey/audit",
+          description: "Title of the survey/audit.",
         },
         description: {
           type: "string",
-          description: "One-sentence description of the audit",
+          description: "One-sentence description of the audit.",
         },
         summary: {
           type: "string",
           description:
-            "Clear summary of what the PDF says, focused on what matters for the audit.",
+            "Clear Spanish summary of what the PDF says, focused on what matters for the audit.",
         },
         auditor_objective: {
           type: "string",
           description:
-            "Main objective of the audit. Explain what the auditor must verify based on the PDF.",
+            "Main audit objective in Spanish. Explain what the auditor must verify based on the PDF.",
         },
         auditor_actions: {
           type: "array",
           items: { type: "string" },
           description:
-            "Suggested practical actions the auditor should perform before or during the audit.",
+            "Suggested practical actions in Spanish that the auditor should perform before or during the audit.",
         },
         sections: {
           type: "array",
@@ -49,7 +49,7 @@ const FORM_SCHEMA_TOOL = {
             properties: {
               title: {
                 type: "string",
-                description: "Audit section title",
+                description: "Audit section title.",
               },
               questions: {
                 type: "array",
@@ -59,13 +59,12 @@ const FORM_SCHEMA_TOOL = {
                     label: {
                       type: "string",
                       description:
-                        "The audit question. Phrase it so Yes means compliant and No means non-compliant.",
+                        "The audit question in Spanish. Phrase it so Yes means compliant and No means non-compliant.",
                     },
                     type: {
                       type: "string",
                       enum: ["yes_no"],
-                      description:
-                        "Always use yes_no for compliance audits.",
+                      description: "Always use yes_no for compliance audits.",
                     },
                     required: {
                       type: "boolean",
@@ -104,7 +103,7 @@ const FORM_SCHEMA_TOOL = {
                         requirement: {
                           type: "string",
                           description:
-                            "Short summary of the requirement that must be verified.",
+                            "Short Spanish summary of the requirement that must be verified.",
                         },
                         source_text: {
                           type: "string",
@@ -120,7 +119,7 @@ const FORM_SCHEMA_TOOL = {
                       properties: {
                         title: {
                           type: "string",
-                          description: "Short risk title",
+                          description: "Short risk title.",
                         },
                         description: {
                           type: "string",
@@ -169,7 +168,14 @@ const FORM_SCHEMA_TOOL = {
                         "Documents, records, screenshots, photos or other evidence the auditor should review.",
                     },
                   },
-                  required: ["label", "type"],
+                  required: [
+                    "label",
+                    "type",
+                    "reference",
+                    "risk",
+                    "recommended_actions",
+                    "expected_evidence",
+                  ],
                 },
               },
             },
@@ -177,7 +183,14 @@ const FORM_SCHEMA_TOOL = {
           },
         },
       },
-      required: ["title", "sections"],
+      required: [
+        "title",
+        "description",
+        "summary",
+        "auditor_objective",
+        "auditor_actions",
+        "sections",
+      ],
     },
   },
 };
@@ -206,6 +219,87 @@ function cleanObject(value: unknown): Record<string, unknown> | undefined {
   }
 
   return Object.keys(cleaned).length ? cleaned : undefined;
+}
+
+function normalizeString(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function getSectionTitles(sections: any[]): string[] {
+  return sections
+    .map((section) => String(section.title ?? "").trim())
+    .filter(Boolean);
+}
+
+function collectActionsFromSections(sections: any[]): string[] {
+  const seen = new Set<string>();
+  const actions: string[] = [];
+
+  for (const section of sections) {
+    for (const question of section.questions ?? []) {
+      for (const action of question.recommended_actions ?? []) {
+        const clean = String(action ?? "").trim();
+        const key = clean.toLowerCase();
+
+        if (clean && !seen.has(key)) {
+          seen.add(key);
+          actions.push(clean);
+        }
+      }
+    }
+  }
+
+  return actions.slice(0, 8);
+}
+
+function buildFallbackSummary(sections: any[]): string {
+  const questionCount = sections.reduce(
+    (sum, section) => sum + (section.questions?.length ?? 0),
+    0
+  );
+
+  const sectionTitles = getSectionTitles(sections).slice(0, 5);
+
+  if (questionCount === 0) {
+    return "El PDF fue procesado, pero no se identificaron preguntas auditables suficientes. Se recomienda revisar manualmente el documento y volver a ejecutar la extracción si corresponde.";
+  }
+
+  const topics =
+    sectionTitles.length > 0
+      ? ` Los principales temas identificados son: ${sectionTitles.join(", ")}.`
+      : "";
+
+  return `El PDF contiene requisitos y criterios de cumplimiento que deben ser verificados durante la auditoría. La IA identificó ${questionCount} pregunta(s) auditable(s) organizadas en ${sections.length} sección(es).${topics}`;
+}
+
+function buildFallbackObjective(sections: any[]): string {
+  const questionCount = sections.reduce(
+    (sum, section) => sum + (section.questions?.length ?? 0),
+    0
+  );
+
+  if (questionCount === 0) {
+    return "Revisar el PDF y confirmar manualmente los requisitos que deben convertirse en controles o preguntas de auditoría.";
+  }
+
+  return "Verificar que la organización cumpla con los requisitos identificados en el PDF, revisando evidencias, responsables, registros y controles asociados a cada pregunta de auditoría.";
+}
+
+function buildFallbackActions(sections: any[]): string[] {
+  const actionsFromQuestions = collectActionsFromSections(sections);
+
+  if (actionsFromQuestions.length > 0) {
+    return actionsFromQuestions;
+  }
+
+  return [
+    "Revisar el documento normativo y confirmar el alcance de la auditoría.",
+    "Solicitar políticas, procedimientos y registros relacionados con los requisitos identificados.",
+    "Entrevistar a los responsables de los procesos auditados.",
+    "Validar evidencias documentales, fechas, aprobaciones y responsables.",
+    "Registrar los hallazgos cuando una respuesta sea No o exista evidencia insuficiente.",
+    "Definir acciones correctivas para cada incumplimiento identificado.",
+  ];
 }
 
 serve(async (req) => {
@@ -293,6 +387,10 @@ You are an expert compliance auditor.
 
 The PDF may contain regulations, standards, policies, legal requirements, operational procedures, technical requirements, internal controls or audit criteria.
 
+Important language rule:
+- Generate all user-facing text in Spanish.
+- Keep risk enum values exactly as requested: Low, Medium, High, Critical.
+
 Your task:
 1. Identify auditable obligations from the document.
 2. Convert each obligation into a Yes/No audit question.
@@ -315,14 +413,14 @@ Your task:
 11. Risks and actions may be professional suggestions based on the extracted requirement, but the requirement itself must come from the PDF.
 12. Always return questions with type = "yes_no".
 13. Return structured JSON only through the function tool.
-14. Also generate a summary of the PDF focused on the audit context.
-15. Also generate the main audit objective: what the auditor must verify.
-16. Also generate practical suggested actions for the auditor.
-17. The suggested actions must be concrete, for example: review documents, interview responsible people, inspect evidence, validate logs, verify approvals, check dates, confirm responsibilities or request missing records.
+14. You MUST generate a non-empty "summary".
+15. You MUST generate a non-empty "auditor_objective".
+16. You MUST generate at least 5 items in "auditor_actions".
+17. The suggested auditor actions must be concrete, for example: review documents, interview responsible people, inspect evidence, validate logs, verify approvals, check dates, confirm responsibilities or request missing records.
 `;
 
     const userInstruction =
-      "Extract a complete compliance audit questionnaire from this PDF. Include a PDF summary, audit objective, suggested auditor actions, normative references, risks for findings, recommended actions and expected evidence for every question.";
+      "Extrae un cuestionario completo de auditoría de cumplimiento desde este PDF. Incluye obligatoriamente resumen del PDF, objetivo del auditor, acciones sugeridas para el auditor, referencias normativas, riesgos por hallazgos, acciones recomendadas y evidencias esperadas por cada pregunta.";
 
     const aiRes = await fetch(
       "https://ai.gateway.lovable.dev/v1/chat/completions",
@@ -416,7 +514,7 @@ Your task:
 
     const sections = (args.sections ?? []).map((sec: any, si: number) => ({
       id: `s${si}_${crypto.randomUUID().slice(0, 8)}`,
-      title: sec.title ?? `Section ${si + 1}`,
+      title: String(sec.title ?? `Section ${si + 1}`).trim(),
       questions: (sec.questions ?? []).map((q: any, qi: number) => ({
         id: `q${si}_${qi}_${crypto.randomUUID().slice(0, 8)}`,
         label: String(q.label ?? `Question ${qi + 1}`).trim(),
@@ -431,14 +529,23 @@ Your task:
       })),
     }));
 
+    const aiAuditorActions = asArray(args.auditor_actions);
+
+    const schema = {
+      summary: normalizeString(args.summary) || buildFallbackSummary(sections),
+      auditor_objective:
+        normalizeString(args.auditor_objective) ||
+        buildFallbackObjective(sections),
+      auditor_actions:
+        aiAuditorActions.length > 0
+          ? aiAuditorActions
+          : buildFallbackActions(sections),
+      sections,
+    };
+
     const update: any = {
       mode: "compliance",
-      schema: {
-        summary: String(args.summary ?? "").trim(),
-        auditor_objective: String(args.auditor_objective ?? "").trim(),
-        auditor_actions: asArray(args.auditor_actions),
-        sections,
-      },
+      schema,
     };
 
     if (args.title && (!survey.title || survey.title === "Untitled survey")) {
@@ -466,9 +573,9 @@ Your task:
         success: true,
         sections: sections.length,
         questions: questionCount,
-        has_summary: Boolean(update.schema.summary),
-        has_auditor_objective: Boolean(update.schema.auditor_objective),
-        auditor_actions: update.schema.auditor_actions.length,
+        has_summary: Boolean(schema.summary),
+        has_auditor_objective: Boolean(schema.auditor_objective),
+        auditor_actions: schema.auditor_actions.length,
       }),
       {
         headers: {
