@@ -153,6 +153,67 @@ function asStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function normalizeText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function normalizeReference(
+  reference: AuditReference | undefined,
+  questionLabel: string
+): AuditReference {
+  const sourceTitle = normalizeText(reference?.source_title);
+  const section = normalizeText(reference?.section);
+  const page = normalizeText(reference?.page);
+  const sourceText = normalizeText(reference?.source_text);
+  const requirement = normalizeText(reference?.requirement);
+
+  return {
+    source_title: sourceTitle,
+    section,
+    page,
+    requirement: requirement || sourceText || questionLabel,
+    source_text: sourceText,
+  };
+}
+
+function normalizeSurveySchema(rawSchema: any): SurveySchema {
+  const sections = Array.isArray(rawSchema?.sections)
+    ? rawSchema.sections.map((section: any) => ({
+        id: String(section.id ?? uid()),
+        title: String(section.title ?? "Section").trim(),
+        questions: Array.isArray(section.questions)
+          ? section.questions.map((question: any) => {
+              const label = String(question.label ?? "").trim();
+
+              return {
+                id: String(question.id ?? uid()),
+                label,
+                type: "yes_no" as FieldType,
+                required: question.required ?? true,
+                options: Array.isArray(question.options)
+                  ? question.options
+                  : [],
+                scale_max: Number(question.scale_max ?? 5),
+                reference: normalizeReference(question.reference, label),
+                risk: question.risk ?? {},
+                recommended_actions: asStringArray(
+                  question.recommended_actions
+                ),
+                expected_evidence: asStringArray(question.expected_evidence),
+              };
+            })
+          : [],
+      }))
+    : [];
+
+  return {
+    summary: String(rawSchema?.summary ?? ""),
+    auditor_objective: String(rawSchema?.auditor_objective ?? ""),
+    auditor_actions: asStringArray(rawSchema?.auditor_actions),
+    sections,
+  };
+}
+
 function SurveyEditor() {
   const { id } = Route.useParams();
   const { user, session, hasRole } = useAuth();
@@ -180,17 +241,12 @@ function SurveyEditor() {
       return;
     }
 
-    const sch = (data.schema as any) ?? { sections: [] };
+    const schema = normalizeSurveySchema((data.schema as any) ?? {});
 
     setSurvey({
       ...data,
       mode: "compliance",
-      schema: {
-        summary: String(sch.summary ?? ""),
-        auditor_objective: String(sch.auditor_objective ?? ""),
-        auditor_actions: asStringArray(sch.auditor_actions),
-        sections: sch.sections ?? [],
-      },
+      schema,
       starts_at: (data as any).starts_at ?? null,
       ends_at: (data as any).ends_at ?? null,
     } as SurveyRow);
@@ -259,6 +315,8 @@ function SurveyEditor() {
       return toast.error("End date must be after start date");
     }
 
+    const normalizedSchema = normalizeSurveySchema(survey.schema);
+
     setSaving(true);
 
     const { error } = await supabase
@@ -267,7 +325,7 @@ function SurveyEditor() {
         title: survey.title,
         description: survey.description,
         mode: "compliance",
-        schema: survey.schema as any,
+        schema: normalizedSchema as any,
         assigned_group_id: survey.assigned_group_id,
         starts_at: survey.starts_at,
         ends_at: survey.ends_at,
@@ -283,6 +341,11 @@ function SurveyEditor() {
 
       return toast.error(error.message);
     }
+
+    setSurvey({
+      ...survey,
+      schema: normalizedSchema,
+    });
 
     toast.success("Saved");
   };
@@ -314,7 +377,10 @@ function SurveyEditor() {
       return toast.error(error.message);
     }
 
-    await supabase.from("surveys").update({ pdf_path: path }).eq("id", survey.id);
+    await supabase
+      .from("surveys")
+      .update({ pdf_path: path })
+      .eq("id", survey.id);
 
     setUploading(false);
 
@@ -480,7 +546,13 @@ function SurveyEditor() {
           required: true,
           options: [],
           scale_max: 5,
-          reference: {},
+          reference: {
+            source_title: "",
+            section: "",
+            page: "",
+            requirement: "New question",
+            source_text: "",
+          },
           risk: {},
           recommended_actions: [],
           expected_evidence: [],
@@ -499,14 +571,23 @@ function SurveyEditor() {
     if (!section) return;
 
     editSection(sid, {
-      questions: section.questions.map((q) =>
-        q.id === qid
-          ? {
-              ...q,
-              ...patch,
-            }
-          : q
-      ),
+      questions: section.questions.map((q) => {
+        if (q.id !== qid) return q;
+
+        const nextQuestion = {
+          ...q,
+          ...patch,
+        };
+
+        if (patch.label || patch.reference) {
+          nextQuestion.reference = normalizeReference(
+            nextQuestion.reference,
+            nextQuestion.label
+          );
+        }
+
+        return nextQuestion;
+      }),
     });
   };
 
@@ -860,85 +941,123 @@ function SurveyEditor() {
                           </p>
 
                           <div className="grid sm:grid-cols-3 gap-2 mt-2">
-                            <Input
-                              value={q.reference?.source_title ?? ""}
-                              onChange={(e) =>
-                                editQuestion(sec.id, q.id, {
-                                  reference: {
-                                    ...(q.reference ?? {}),
-                                    source_title: e.target.value,
-                                  },
-                                })
-                              }
-                              disabled={!isDraft}
-                              placeholder="Document / standard"
-                              maxLength={200}
-                            />
+                            <div className="space-y-1.5">
+                              <Label className="text-xs text-muted-foreground">
+                                Documento / norma
+                              </Label>
 
-                            <Input
-                              value={q.reference?.section ?? ""}
-                              onChange={(e) =>
-                                editQuestion(sec.id, q.id, {
-                                  reference: {
-                                    ...(q.reference ?? {}),
-                                    section: e.target.value,
-                                  },
-                                })
-                              }
-                              disabled={!isDraft}
-                              placeholder="Section / article / clause"
-                              maxLength={120}
-                            />
+                              <Input
+                                value={q.reference?.source_title ?? ""}
+                                onChange={(e) =>
+                                  editQuestion(sec.id, q.id, {
+                                    reference: {
+                                      ...(q.reference ?? {}),
+                                      source_title: e.target.value,
+                                    },
+                                  })
+                                }
+                                disabled={!isDraft}
+                                placeholder="Document / standard"
+                                maxLength={200}
+                              />
+                            </div>
 
-                            <Input
-                              value={q.reference?.page ?? ""}
-                              onChange={(e) =>
-                                editQuestion(sec.id, q.id, {
-                                  reference: {
-                                    ...(q.reference ?? {}),
-                                    page: e.target.value,
-                                  },
-                                })
-                              }
-                              disabled={!isDraft}
-                              placeholder="Page"
-                              maxLength={50}
-                            />
+                            <div className="space-y-1.5">
+                              <Label className="text-xs text-muted-foreground">
+                                Sección / artículo / cláusula
+                              </Label>
+
+                              <Input
+                                value={q.reference?.section ?? ""}
+                                onChange={(e) =>
+                                  editQuestion(sec.id, q.id, {
+                                    reference: {
+                                      ...(q.reference ?? {}),
+                                      section: e.target.value,
+                                    },
+                                  })
+                                }
+                                disabled={!isDraft}
+                                placeholder="Section / article / clause"
+                                maxLength={120}
+                              />
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <Label className="text-xs text-muted-foreground">
+                                Página
+                              </Label>
+
+                              <Input
+                                value={q.reference?.page ?? ""}
+                                onChange={(e) =>
+                                  editQuestion(sec.id, q.id, {
+                                    reference: {
+                                      ...(q.reference ?? {}),
+                                      page: e.target.value,
+                                    },
+                                  })
+                                }
+                                disabled={!isDraft}
+                                placeholder="Page"
+                                maxLength={50}
+                              />
+                            </div>
                           </div>
 
-                          <Textarea
-                            className="mt-2"
-                            value={q.reference?.requirement ?? ""}
-                            onChange={(e) =>
-                              editQuestion(sec.id, q.id, {
-                                reference: {
-                                  ...(q.reference ?? {}),
-                                  requirement: e.target.value,
-                                },
-                              })
-                            }
-                            disabled={!isDraft}
-                            placeholder="Requirement summary"
-                            maxLength={1000}
-                            rows={2}
-                          />
+                          <div className="space-y-1.5 mt-2">
+                            <Label className="text-xs text-muted-foreground">
+                              Resumen del requisito / criterio a verificar
+                            </Label>
 
-                          <Textarea
-                            className="mt-2"
-                            value={q.reference?.source_text ?? ""}
-                            onChange={(e) =>
-                              editQuestion(sec.id, q.id, {
-                                reference: {
-                                  ...(q.reference ?? {}),
-                                  source_text: e.target.value,
-                                },
-                              })
-                            }
-                            disabled={!isDraft}
-                            placeholder="Short source text / excerpt"
-                            maxLength={1500}
-                            rows={2}
-                          />
+                            <Textarea
+                              value={
+                                q.reference?.requirement ||
+                                q.reference?.source_text ||
+                                q.label
+                              }
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  reference: {
+                                    ...(q.reference ?? {}),
+                                    requirement: e.target.value,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                              placeholder="Describe qué requisito debe verificar el auditor"
+                              maxLength={1000}
+                              rows={2}
+                            />
+
+                            <p className="text-xs text-muted-foreground">
+                              Este campo debe explicar claramente qué se debe
+                              verificar. Si la IA no lo encuentra en el PDF, se
+                              completa con el texto fuente o con la pregunta.
+                            </p>
+                          </div>
+
+                          <div className="space-y-1.5 mt-2">
+                            <Label className="text-xs text-muted-foreground">
+                              Texto fuente / extracto del PDF
+                            </Label>
+
+                            <Textarea
+                              value={q.reference?.source_text ?? ""}
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  reference: {
+                                    ...(q.reference ?? {}),
+                                    source_text: e.target.value,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                              placeholder="Texto o extracto tomado del PDF"
+                              maxLength={1500}
+                              rows={2}
+                            />
+                          </div>
                         </div>
 
                         <div>
