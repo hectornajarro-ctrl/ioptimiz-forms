@@ -55,7 +55,7 @@ export function AppLayout() {
       show: hasRole("admin"),
     },
     {
-      to: "/admin/groups",
+      to: "/admin/audits",
       label: "Audits",
       icon: FolderKanban,
       show: hasRole("admin") || hasRole("lead_auditor"),
