@@ -1,6 +1,16 @@
 import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
-import { ShieldCheck, Users, FolderKanban, FileText, ClipboardList, LogOut, LayoutDashboard, History } from "lucide-react";
+import {
+  ShieldCheck,
+  Users,
+  FolderKanban,
+  FileText,
+  ClipboardList,
+  LogOut,
+  LayoutDashboard,
+  History,
+  ListTodo,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
@@ -25,73 +35,128 @@ export function AppLayout() {
 
   if (loading || !user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="text-muted-foreground text-sm">Loading…</div>
+      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
+        Loading…
       </div>
     );
   }
 
   const items: NavItem[] = [
-    { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, show: true },
-    { to: "/admin/users", label: "Users", icon: Users, show: hasRole("admin") },
-    { to: "/admin/groups", label: "Audit Groups", icon: FolderKanban, show: hasRole("admin") || hasRole("lead_auditor") },
-    { to: "/admin/activity", label: "Activity Log", icon: History, show: hasRole("admin") },
-    { to: "/surveys", label: "My Surveys", icon: FileText, show: hasRole("lead_auditor") || hasRole("admin") },
-    { to: "/assigned", label: "Assigned Audits", icon: ClipboardList, show: hasRole("member_auditor") },
+    {
+      to: "/dashboard",
+      label: "Dashboard",
+      icon: LayoutDashboard,
+      show: true,
+    },
+    {
+      to: "/admin/users",
+      label: "Users",
+      icon: Users,
+      show: hasRole("admin"),
+    },
+    {
+      to: "/admin/groups",
+      label: "Audit Groups",
+      icon: FolderKanban,
+      show: hasRole("admin") || hasRole("lead_auditor"),
+    },
+    {
+      to: "/admin/activity",
+      label: "Activity Log",
+      icon: History,
+      show: hasRole("admin"),
+    },
+    {
+      to: "/surveys",
+      label: "My Surveys",
+      icon: FileText,
+      show: hasRole("lead_auditor") || hasRole("admin"),
+    },
+    {
+      to: "/action-plans",
+      label: "Action Plans",
+      icon: ListTodo,
+      show: hasRole("lead_auditor") || hasRole("admin"),
+    },
+    {
+      to: "/assigned",
+      label: "Assigned Audits",
+      icon: ClipboardList,
+      show: hasRole("member_auditor"),
+    },
   ];
 
   return (
     <div className="flex min-h-screen bg-background">
-      <aside className="w-64 shrink-0 bg-sidebar text-sidebar-foreground flex flex-col border-r border-sidebar-border">
-        <div className="px-6 py-6 border-b border-sidebar-border">
-          <div className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-md bg-sidebar-primary flex items-center justify-center">
-              <ShieldCheck className="h-5 w-5 text-sidebar-primary-foreground" />
+      <aside className="flex w-[308px] shrink-0 flex-col bg-[#061B33] text-white">
+        <div className="border-b border-white/10 px-7 py-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-cyan-500">
+              <ShieldCheck className="h-7 w-7 text-white" />
             </div>
+
             <div>
-              <div className="font-semibold tracking-tight">AuditFlow</div>
-              <div className="text-xs text-sidebar-foreground/60">Audit management</div>
+              <div className="text-xl font-semibold leading-tight">
+                AuditFlow
+              </div>
+              <div className="text-sm text-slate-300">Audit management</div>
             </div>
           </div>
         </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          {items.filter((i) => i.show).map((item) => {
-            const active = location.pathname.startsWith(item.to);
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                  active
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="px-4 py-4 border-t border-sidebar-border">
-          <div className="text-xs text-sidebar-foreground/60 mb-1">Signed in as</div>
-          <div className="text-sm truncate">{user.email}</div>
-          <div className="text-xs text-sidebar-foreground/60 mt-1 capitalize">
-            {roles.map((r) => r.replace("_", " ")).join(" · ") || "no role"}
+
+        <nav className="flex-1 px-4 py-6">
+          <div className="space-y-2">
+            {items
+              .filter((item) => item.show)
+              .map((item) => {
+                const active =
+                  item.to === "/dashboard"
+                    ? location.pathname === "/dashboard"
+                    : location.pathname === item.to ||
+                      location.pathname.startsWith(`${item.to}/`);
+
+                const Icon = item.icon;
+
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={cn(
+                      "flex items-center gap-4 rounded-md px-4 py-3 text-base font-medium transition-colors",
+                      active
+                        ? "bg-white/10 text-white"
+                        : "text-slate-200 hover:bg-white/5 hover:text-white"
+                    )}
+                  >
+                    <Icon className="h-5 w-5 shrink-0" />
+                    {item.label}
+                  </Link>
+                );
+              })}
           </div>
+        </nav>
+
+        <div className="border-t border-white/10 px-4 py-4">
+          <div className="mb-3 rounded-md bg-white/5 px-3 py-2 text-xs text-slate-300">
+            <div className="font-medium text-white">Signed in as</div>
+            <div className="mt-1 truncate">{user.email}</div>
+            <div className="mt-1 truncate">
+              {roles.map((r) => r.replace("_", " ")).join(" · ") || "no role"}
+            </div>
+          </div>
+
           <Button
             variant="ghost"
-            size="sm"
+            className="w-full justify-start text-slate-200 hover:bg-white/5 hover:text-white"
             onClick={signOut}
-            className="mt-3 w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
-            <LogOut className="h-4 w-4 mr-2" /> Sign out
+            <LogOut className="mr-2 h-4 w-4" />
+            Sign out
           </Button>
         </div>
       </aside>
-      <main className="flex-1 overflow-auto">
+
+      <main className="min-w-0 flex-1 overflow-auto">
         <Outlet />
       </main>
     </div>
