@@ -14,8 +14,10 @@ import {
   Filter,
   FolderKanban,
   ListTodo,
+  Loader2,
   Save,
   Search,
+  Sparkles,
   Upload,
   User,
   XCircle,
@@ -39,7 +41,6 @@ interface AuditReference {
   page?: string;
   requirement?: string;
   source_text?: string;
-  [key: string]: unknown;
 }
 
 interface AuditRisk {
@@ -49,7 +50,6 @@ interface AuditRisk {
   severity?: string;
   likelihood?: string;
   impact?: string;
-  [key: string]: unknown;
 }
 
 interface SurveyLite {
@@ -91,6 +91,11 @@ interface ActionPlanItem {
   closure_comment: string | null;
   closure_evidence_path: string | null;
   closure_evidence_name: string | null;
+  ai_risk_summary: string | null;
+  ai_business_impact: string | null;
+  ai_benefits: string[];
+  ai_auditor_argument: string | null;
+  ai_generated_at: string | null;
   created_at: string;
   updated_at: string;
   survey_title: string;
@@ -208,6 +213,15 @@ function progressClass(progress: number) {
   return progress === 100 ? "bg-success" : "bg-accent";
 }
 
+function hasAiContent(item: ActionPlanItem) {
+  return Boolean(
+    item.ai_risk_summary ||
+      item.ai_business_impact ||
+      item.ai_auditor_argument ||
+      item.ai_benefits.length > 0
+  );
+}
+
 function ActionPlansPage() {
   const { user, hasRole, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -216,6 +230,10 @@ function ActionPlansPage() {
   const [items, setItems] = useState<ActionPlanItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [generatingSurveyId, setGeneratingSurveyId] = useState<string | null>(
+    null
+  );
+  const [generatingItemId, setGeneratingItemId] = useState<string | null>(null);
   const [uploadingEvidenceId, setUploadingEvidenceId] =
     useState<string | null>(null);
   const [openingEvidence, setOpeningEvidence] = useState<string | null>(null);
@@ -288,7 +306,7 @@ function ActionPlansPage() {
         if (auditsError) throw auditsError;
 
         auditMap = new Map(
-          ((auditsData ?? []) as unknown as AuditLite[]).map((audit) => [
+          ((auditsData ?? []) as AuditLite[]).map((audit) => [
             audit.id,
             audit,
           ])
@@ -360,6 +378,11 @@ function ActionPlansPage() {
           closure_comment: item.closure_comment ?? null,
           closure_evidence_path: item.closure_evidence_path ?? null,
           closure_evidence_name: item.closure_evidence_name ?? null,
+          ai_risk_summary: item.ai_risk_summary ?? null,
+          ai_business_impact: item.ai_business_impact ?? null,
+          ai_benefits: asStringArray(item.ai_benefits),
+          ai_auditor_argument: item.ai_auditor_argument ?? null,
+          ai_generated_at: item.ai_generated_at ?? null,
           created_at: item.created_at,
           updated_at: item.updated_at,
           survey_title: survey?.title ?? "Survey",
@@ -394,6 +417,68 @@ function ActionPlansPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user, canView, isAdmin]);
 
+  const generateAiForSurvey = async (surveyId: string) => {
+    setGeneratingSurveyId(surveyId);
+
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        "generate-action-plan-ai",
+        {
+          body: {
+            surveyId,
+          },
+        }
+      );
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast.success(
+        `AI generated recommendations for ${data?.updated ?? 0} action plan(s)`
+      );
+
+      await loadData();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "No se pudo generar el action plan con IA"
+      );
+    } finally {
+      setGeneratingSurveyId(null);
+    }
+  };
+
+  const generateAiForItem = async (actionPlanItemId: string) => {
+    setGeneratingItemId(actionPlanItemId);
+
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        "generate-action-plan-ai",
+        {
+          body: {
+            actionPlanItemId,
+          },
+        }
+      );
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast.success("AI generated recommendations for this action plan");
+
+      await loadData();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "No se pudo generar este action plan con IA"
+      );
+    } finally {
+      setGeneratingItemId(null);
+    }
+  };
+
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
       if (selectedSurveyId && item.survey_id !== selectedSurveyId) {
@@ -421,6 +506,10 @@ function ActionPlansPage() {
         item.finding_comment ?? "",
         item.risk?.title ?? "",
         item.risk?.description ?? "",
+        item.ai_risk_summary ?? "",
+        item.ai_business_impact ?? "",
+        item.ai_auditor_argument ?? "",
+        item.ai_benefits.join(" "),
       ]
         .join(" ")
         .toLowerCase();
@@ -693,6 +782,7 @@ function ActionPlansPage() {
     const referenceText = buildReferenceText(item.reference);
     const hasClosureEvidence = !!item.closure_evidence_path;
     const StatusIcon = statusIcon(item.status);
+    const itemHasAiContent = hasAiContent(item);
 
     return (
       <div key={item.id} className="rounded-lg border bg-background p-5">
@@ -728,24 +818,50 @@ function ActionPlansPage() {
                   Categoría: {item.risk.category}
                 </span>
               )}
+
+              {itemHasAiContent && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2.5 py-0.5 text-xs font-medium text-accent-foreground">
+                  <Sparkles className="h-3 w-3" />
+                  IA enriquecida
+                </span>
+              )}
             </div>
 
-            <h4 className="mt-3 text-lg font-semibold tracking-tight">
-              {item.question_label}
-            </h4>
+            <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h4 className="text-lg font-semibold tracking-tight">
+                  {item.question_label}
+                </h4>
 
-            <div className="mt-1 text-sm text-muted-foreground">
-              <span className="font-medium">Sección: </span>
-              {item.section_title}
-            </div>
+                <div className="mt-1 text-sm text-muted-foreground">
+                  <span className="font-medium">Sección: </span>
+                  {item.section_title}
+                </div>
 
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <User className="h-4 w-4" />
-              <span>
-                <span className="font-medium">Auditor: </span>
-                {item.auditor_name}
-              </span>
-              {item.auditor_email && <span>({item.auditor_email})</span>}
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <User className="h-4 w-4" />
+                  <span>
+                    <span className="font-medium">Auditor: </span>
+                    {item.auditor_name}
+                  </span>
+                  {item.auditor_email && <span>({item.auditor_email})</span>}
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                variant={itemHasAiContent ? "outline" : "default"}
+                size="sm"
+                onClick={() => generateAiForItem(item.id)}
+                disabled={generatingItemId === item.id || !!generatingSurveyId}
+              >
+                {generatingItemId === item.id ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-2 h-4 w-4" />
+                )}
+                {itemHasAiContent ? "Regenerate AI" : "Generate with AI"}
+              </Button>
             </div>
 
             {referenceText && (
@@ -763,13 +879,13 @@ function ActionPlansPage() {
             )}
 
             {(item.risk?.title || item.risk?.description) && (
-              <div className="mt-4 rounded-md border bg-muted/30 p-3 text-sm">
-                <div className="font-medium">Riesgo asociado</div>
+              <div className="mt-4 rounded-md border border-destructive/20 bg-destructive/5 p-3 text-sm">
+                <div className="font-medium text-destructive">
+                  Riesgo asociado
+                </div>
 
                 {item.risk?.title && (
-                  <div className="text-muted-foreground">
-                    {item.risk.title}
-                  </div>
+                  <div className="mt-1 font-medium">{item.risk.title}</div>
                 )}
 
                 {item.risk?.description && (
@@ -777,6 +893,20 @@ function ActionPlansPage() {
                     {item.risk.description}
                   </p>
                 )}
+
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  {item.risk?.likelihood && (
+                    <span className="rounded-full border bg-background px-2 py-0.5">
+                      Probabilidad: {item.risk.likelihood}
+                    </span>
+                  )}
+
+                  {item.risk?.impact && (
+                    <span className="rounded-full border bg-background px-2 py-0.5">
+                      Impacto: {item.risk.impact}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
 
@@ -786,6 +916,66 @@ function ActionPlansPage() {
                 <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
                   {item.finding_comment}
                 </p>
+              </div>
+            )}
+
+            {itemHasAiContent && (
+              <div className="mt-4 rounded-md border border-accent/30 bg-accent/5 p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 font-semibold">
+                    <Sparkles className="h-4 w-4 text-accent-foreground" />
+                    Recomendación generada por IA
+                  </div>
+
+                  {item.ai_generated_at && (
+                    <div className="text-xs text-muted-foreground">
+                      Generado:{" "}
+                      {new Date(item.ai_generated_at).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  {item.ai_risk_summary && (
+                    <div className="rounded-md border bg-background p-3 text-sm">
+                      <div className="font-medium">Resumen ejecutivo del riesgo</div>
+                      <p className="mt-1 text-muted-foreground whitespace-pre-wrap">
+                        {item.ai_risk_summary}
+                      </p>
+                    </div>
+                  )}
+
+                  {item.ai_business_impact && (
+                    <div className="rounded-md border bg-background p-3 text-sm">
+                      <div className="font-medium">Impacto para la empresa</div>
+                      <p className="mt-1 text-muted-foreground whitespace-pre-wrap">
+                        {item.ai_business_impact}
+                      </p>
+                    </div>
+                  )}
+
+                  {item.ai_benefits.length > 0 && (
+                    <div className="rounded-md border bg-background p-3 text-sm">
+                      <div className="font-medium">Beneficios de corregir</div>
+                      <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                        {item.ai_benefits.map((benefit, benefitIndex) => (
+                          <li key={benefitIndex}>{benefit}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {item.ai_auditor_argument && (
+                    <div className="rounded-md border bg-background p-3 text-sm">
+                      <div className="font-medium">
+                        Argumento para sustentar el hallazgo
+                      </div>
+                      <p className="mt-1 text-muted-foreground whitespace-pre-wrap">
+                        {item.ai_auditor_argument}
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1210,8 +1400,8 @@ function ActionPlansPage() {
                           </div>
 
                           <p className="mt-1 text-sm text-muted-foreground">
-                            {surveyGroup.totalItems} action plan(s) generados por
-                            hallazgos del survey.
+                            {surveyGroup.totalItems} action plan(s) generados
+                            por hallazgos del survey.
                           </p>
                         </div>
 
@@ -1230,6 +1420,24 @@ function ActionPlansPage() {
                             )}
                             {surveyGroup.progressPercent}% cerrado
                           </span>
+
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => generateAiForSurvey(surveyGroup.surveyId)}
+                            disabled={
+                              generatingSurveyId === surveyGroup.surveyId ||
+                              !!generatingItemId
+                            }
+                          >
+                            {generatingSurveyId === surveyGroup.surveyId ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Sparkles className="mr-2 h-4 w-4" />
+                            )}
+                            Generate with AI
+                          </Button>
 
                           <Button variant="outline" size="sm" asChild>
                             <Link
@@ -1250,9 +1458,9 @@ function ActionPlansPage() {
                             {surveyGroup.totalItems}
                           </span>
                           <span>
-                            Pendientes: {surveyGroup.pendingItems} · En progreso:{" "}
-                            {surveyGroup.inProgressItems} · Cancelados:{" "}
-                            {surveyGroup.cancelledItems}
+                            Pendientes: {surveyGroup.pendingItems} · En
+                            progreso: {surveyGroup.inProgressItems} ·
+                            Cancelados: {surveyGroup.cancelledItems}
                           </span>
                         </div>
 
