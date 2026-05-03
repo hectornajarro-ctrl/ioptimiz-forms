@@ -157,22 +157,13 @@ function normalizeText(value: unknown): string {
   return String(value ?? "").trim();
 }
 
-function normalizeReference(
-  reference: AuditReference | undefined,
-  questionLabel: string
-): AuditReference {
-  const sourceTitle = normalizeText(reference?.source_title);
-  const section = normalizeText(reference?.section);
-  const page = normalizeText(reference?.page);
-  const sourceText = normalizeText(reference?.source_text);
-  const requirement = normalizeText(reference?.requirement);
-
+function normalizeReference(reference: AuditReference | undefined): AuditReference {
   return {
-    source_title: sourceTitle,
-    section,
-    page,
-    requirement: requirement || sourceText || questionLabel,
-    source_text: sourceText,
+    source_title: normalizeText(reference?.source_title),
+    section: normalizeText(reference?.section),
+    page: normalizeText(reference?.page),
+    requirement: normalizeText(reference?.requirement),
+    source_text: normalizeText(reference?.source_text),
   };
 }
 
@@ -194,7 +185,7 @@ function normalizeSurveySchema(rawSchema: any): SurveySchema {
                   ? question.options
                   : [],
                 scale_max: Number(question.scale_max ?? 5),
-                reference: normalizeReference(question.reference, label),
+                reference: normalizeReference(question.reference),
                 risk: question.risk ?? {},
                 recommended_actions: asStringArray(
                   question.recommended_actions
@@ -550,7 +541,7 @@ function SurveyEditor() {
             source_title: "",
             section: "",
             page: "",
-            requirement: "New question",
+            requirement: "",
             source_text: "",
           },
           risk: {},
@@ -579,11 +570,8 @@ function SurveyEditor() {
           ...patch,
         };
 
-        if (patch.label || patch.reference) {
-          nextQuestion.reference = normalizeReference(
-            nextQuestion.reference,
-            nextQuestion.label
-          );
+        if (patch.reference) {
+          nextQuestion.reference = normalizeReference(nextQuestion.reference);
         }
 
         return nextQuestion;
@@ -1003,60 +991,6 @@ function SurveyEditor() {
                                 maxLength={50}
                               />
                             </div>
-                          </div>
-
-                          <div className="space-y-1.5 mt-2">
-                            <Label className="text-xs text-muted-foreground">
-                              Resumen del requisito / criterio a verificar
-                            </Label>
-
-                            <Textarea
-                              value={
-                                q.reference?.requirement ||
-                                q.reference?.source_text ||
-                                q.label
-                              }
-                              onChange={(e) =>
-                                editQuestion(sec.id, q.id, {
-                                  reference: {
-                                    ...(q.reference ?? {}),
-                                    requirement: e.target.value,
-                                  },
-                                })
-                              }
-                              disabled={!isDraft}
-                              placeholder="Describe qué requisito debe verificar el auditor"
-                              maxLength={1000}
-                              rows={2}
-                            />
-
-                            <p className="text-xs text-muted-foreground">
-                              Este campo debe explicar claramente qué se debe
-                              verificar. Si la IA no lo encuentra en el PDF, se
-                              completa con el texto fuente o con la pregunta.
-                            </p>
-                          </div>
-
-                          <div className="space-y-1.5 mt-2">
-                            <Label className="text-xs text-muted-foreground">
-                              Texto fuente / extracto del PDF
-                            </Label>
-
-                            <Textarea
-                              value={q.reference?.source_text ?? ""}
-                              onChange={(e) =>
-                                editQuestion(sec.id, q.id, {
-                                  reference: {
-                                    ...(q.reference ?? {}),
-                                    source_text: e.target.value,
-                                  },
-                                })
-                              }
-                              disabled={!isDraft}
-                              placeholder="Texto o extracto tomado del PDF"
-                              maxLength={1500}
-                              rows={2}
-                            />
                           </div>
                         </div>
 
