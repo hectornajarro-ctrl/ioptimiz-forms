@@ -1,4 +1,8 @@
-import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  useNavigate,
+} from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
@@ -28,6 +32,10 @@ import { toast } from "sonner";
 
 type ActionPlanStatus = "pending" | "in_progress" | "closed" | "cancelled";
 type StatusFilter = "all" | ActionPlanStatus;
+
+interface ActionPlansSearch {
+  surveyId?: string;
+}
 
 interface AuditReference {
   source_title?: string;
@@ -119,6 +127,14 @@ interface AuditGroup {
 }
 
 export const Route = createFileRoute("/_app/action-plans")({
+  validateSearch: (search: Record<string, unknown>): ActionPlansSearch => {
+    return {
+      surveyId:
+        typeof search.surveyId === "string" && search.surveyId.trim()
+          ? search.surveyId
+          : undefined,
+    };
+  },
   component: ActionPlansPage,
   head: () => ({
     meta: [{ title: "Action Plans — AuditFlow" }],
@@ -196,7 +212,8 @@ function progressClass(progress: number) {
 
 function ActionPlansPage() {
   const { user, hasRole, loading: authLoading } = useAuth();
-  const location = useLocation();
+  const navigate = useNavigate();
+  const searchParams = Route.useSearch();
 
   const [items, setItems] = useState<ActionPlanItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -204,38 +221,22 @@ function ActionPlansPage() {
   const [uploadingEvidenceId, setUploadingEvidenceId] =
     useState<string | null>(null);
   const [openingEvidence, setOpeningEvidence] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+  const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   const isAdmin = hasRole("admin");
   const canView = isAdmin || hasRole("lead_auditor");
 
-  const selectedSurveyId = useMemo(() => {
-    const searchValue = location.search as unknown;
-
-    if (
-      searchValue &&
-      typeof searchValue === "object" &&
-      "surveyId" in searchValue
-    ) {
-      return String((searchValue as { surveyId?: string }).surveyId ?? "");
-    }
-
-    if (typeof window !== "undefined") {
-      return new URLSearchParams(window.location.search).get("surveyId") ?? "";
-    }
-
-    return "";
-  }, [location.search]);
-
+  const selectedSurveyId = searchParams.surveyId ?? "";
   const isSurveyDetailWindow = selectedSurveyId.length > 0;
 
   const openSurveyActionPlans = (surveyId: string) => {
-    const url = `${window.location.origin}/action-plans?surveyId=${encodeURIComponent(
-      surveyId
-    )}`;
-
-    window.open(url, "_blank", "noopener,noreferrer");
+    navigate({
+      to: "/action-plans",
+      search: {
+        surveyId,
+      },
+    });
   };
 
   const loadData = async () => {
@@ -416,7 +417,7 @@ function ActionPlansPage() {
 
       if (!matchesStatus) return false;
 
-      const term = search.trim().toLowerCase();
+      const term = searchText.trim().toLowerCase();
 
       if (!term) return true;
 
@@ -438,7 +439,7 @@ function ActionPlansPage() {
 
       return haystack.includes(term);
     });
-  }, [items, search, statusFilter, selectedSurveyId]);
+  }, [items, searchText, statusFilter, selectedSurveyId]);
 
   const groupedByAudit = useMemo<AuditGroup[]>(() => {
     const auditsMap = new Map<
@@ -1111,8 +1112,8 @@ function ActionPlansPage() {
               <Input
                 className="pl-9"
                 placeholder="Buscar por audit, survey, pregunta, auditor, responsable, acción..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
               />
             </div>
           </div>
