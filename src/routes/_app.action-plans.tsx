@@ -6,8 +6,11 @@ import {
   AlertTriangle,
   ArrowLeft,
   CalendarDays,
+  CheckCircle2,
+  Clock,
   Eye,
   FileImage,
+  FileText,
   Filter,
   FolderKanban,
   ListTodo,
@@ -15,6 +18,7 @@ import {
   Search,
   Upload,
   User,
+  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,6 +94,30 @@ interface ActionPlanItem {
   auditor_email: string;
 }
 
+interface SurveyGroup {
+  surveyId: string;
+  surveyTitle: string;
+  totalItems: number;
+  closedItems: number;
+  pendingItems: number;
+  inProgressItems: number;
+  cancelledItems: number;
+  progressPercent: number;
+  items: ActionPlanItem[];
+}
+
+interface AuditGroup {
+  auditId: string | null;
+  auditName: string;
+  totalItems: number;
+  closedItems: number;
+  pendingItems: number;
+  inProgressItems: number;
+  cancelledItems: number;
+  progressPercent: number;
+  surveys: SurveyGroup[];
+}
+
 export const Route = createFileRoute("/_app/action-plans")({
   component: ActionPlansPage,
   head: () => ({
@@ -152,6 +180,18 @@ function statusClass(status: ActionPlanStatus) {
   }
 
   return "border-warning/30 bg-warning/10 text-warning-foreground";
+}
+
+function statusIcon(status: ActionPlanStatus) {
+  if (status === "closed") return CheckCircle2;
+  if (status === "in_progress") return Clock;
+  if (status === "cancelled") return XCircle;
+
+  return AlertTriangle;
+}
+
+function progressClass(progress: number) {
+  return progress === 100 ? "bg-success" : "bg-accent";
 }
 
 function ActionPlansPage() {
@@ -367,21 +407,18 @@ function ActionPlansPage() {
     });
   }, [items, search, statusFilter]);
 
-  const groupedByAudit = useMemo(() => {
+  const groupedByAudit = useMemo<AuditGroup[]>(() => {
     const auditsMap = new Map<
       string,
       {
         auditId: string | null;
         auditName: string;
-        totalItems: number;
-        closedItems: number;
+        items: ActionPlanItem[];
         surveys: Map<
           string,
           {
             surveyId: string;
             surveyTitle: string;
-            totalItems: number;
-            closedItems: number;
             items: ActionPlanItem[];
           }
         >;
@@ -395,45 +432,97 @@ function ActionPlansPage() {
         auditsMap.set(auditKey, {
           auditId: item.audit_id,
           auditName: item.audit_name,
-          totalItems: 0,
-          closedItems: 0,
+          items: [],
           surveys: new Map(),
         });
       }
 
       const auditGroup = auditsMap.get(auditKey)!;
 
-      auditGroup.totalItems += 1;
-
-      if (item.status === "closed") {
-        auditGroup.closedItems += 1;
-      }
+      auditGroup.items.push(item);
 
       if (!auditGroup.surveys.has(item.survey_id)) {
         auditGroup.surveys.set(item.survey_id, {
           surveyId: item.survey_id,
           surveyTitle: item.survey_title,
-          totalItems: 0,
-          closedItems: 0,
           items: [],
         });
       }
 
-      const surveyGroup = auditGroup.surveys.get(item.survey_id)!;
-
-      surveyGroup.totalItems += 1;
-
-      if (item.status === "closed") {
-        surveyGroup.closedItems += 1;
-      }
-
-      surveyGroup.items.push(item);
+      auditGroup.surveys.get(item.survey_id)!.items.push(item);
     });
 
-    return Array.from(auditsMap.values()).map((auditGroup) => ({
-      ...auditGroup,
-      surveys: Array.from(auditGroup.surveys.values()),
-    }));
+    return Array.from(auditsMap.values()).map((auditGroup) => {
+      const auditClosed = auditGroup.items.filter(
+        (item) => item.status === "closed"
+      ).length;
+
+      const auditPending = auditGroup.items.filter(
+        (item) => item.status === "pending"
+      ).length;
+
+      const auditInProgress = auditGroup.items.filter(
+        (item) => item.status === "in_progress"
+      ).length;
+
+      const auditCancelled = auditGroup.items.filter(
+        (item) => item.status === "cancelled"
+      ).length;
+
+      const auditProgress =
+        auditGroup.items.length > 0
+          ? Math.round((auditClosed / auditGroup.items.length) * 100)
+          : 0;
+
+      const surveys = Array.from(auditGroup.surveys.values()).map(
+        (surveyGroup) => {
+          const closedItems = surveyGroup.items.filter(
+            (item) => item.status === "closed"
+          ).length;
+
+          const pendingItems = surveyGroup.items.filter(
+            (item) => item.status === "pending"
+          ).length;
+
+          const inProgressItems = surveyGroup.items.filter(
+            (item) => item.status === "in_progress"
+          ).length;
+
+          const cancelledItems = surveyGroup.items.filter(
+            (item) => item.status === "cancelled"
+          ).length;
+
+          const progressPercent =
+            surveyGroup.items.length > 0
+              ? Math.round((closedItems / surveyGroup.items.length) * 100)
+              : 0;
+
+          return {
+            surveyId: surveyGroup.surveyId,
+            surveyTitle: surveyGroup.surveyTitle,
+            totalItems: surveyGroup.items.length,
+            closedItems,
+            pendingItems,
+            inProgressItems,
+            cancelledItems,
+            progressPercent,
+            items: surveyGroup.items,
+          };
+        }
+      );
+
+      return {
+        auditId: auditGroup.auditId,
+        auditName: auditGroup.auditName,
+        totalItems: auditGroup.items.length,
+        closedItems: auditClosed,
+        pendingItems: auditPending,
+        inProgressItems: auditInProgress,
+        cancelledItems: auditCancelled,
+        progressPercent: auditProgress,
+        surveys,
+      };
+    });
   }, [filteredItems]);
 
   const stats = useMemo(() => {
@@ -572,6 +661,294 @@ function ActionPlansPage() {
     }
   };
 
+  const renderActionPlanItem = (item: ActionPlanItem, index: number) => {
+    const referenceText = buildReferenceText(item.reference);
+    const hasClosureEvidence = !!item.closure_evidence_path;
+    const StatusIcon = statusIcon(item.status);
+
+    return (
+      <div key={item.id} className="rounded-lg border bg-background p-4">
+        <div className="flex flex-wrap items-start gap-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-sm font-semibold text-destructive">
+            {index + 1}
+          </div>
+
+          <div className="flex-1 min-w-64">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1 rounded-full border border-destructive/30 bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive">
+                <AlertTriangle className="h-3 w-3" />
+                Hallazgo
+              </span>
+
+              <span
+                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${statusClass(
+                  item.status
+                )}`}
+              >
+                <StatusIcon className="h-3 w-3" />
+                {statusLabel(item.status)}
+              </span>
+
+              {item.risk?.severity && (
+                <span className="rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">
+                  Severidad: {item.risk.severity}
+                </span>
+              )}
+
+              {item.risk?.category && (
+                <span className="rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">
+                  Categoría: {item.risk.category}
+                </span>
+              )}
+            </div>
+
+            <h4 className="mt-3 font-semibold tracking-tight">
+              {item.question_label}
+            </h4>
+
+            <div className="mt-1 text-sm text-muted-foreground">
+              <span className="font-medium">Sección: </span>
+              {item.section_title}
+            </div>
+
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <User className="h-4 w-4" />
+              <span>
+                <span className="font-medium">Auditor: </span>
+                {item.auditor_name}
+              </span>
+              {item.auditor_email && <span>({item.auditor_email})</span>}
+            </div>
+
+            {referenceText && (
+              <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
+                <div className="font-medium">Referencia normativa</div>
+
+                <div className="text-muted-foreground">{referenceText}</div>
+
+                {item.reference?.requirement && (
+                  <div className="mt-1 text-muted-foreground">
+                    {item.reference.requirement}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(item.risk?.title || item.risk?.description) && (
+              <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
+                <div className="font-medium">Riesgo asociado</div>
+
+                {item.risk?.title && (
+                  <div className="text-muted-foreground">
+                    {item.risk.title}
+                  </div>
+                )}
+
+                {item.risk?.description && (
+                  <p className="mt-1 text-muted-foreground">
+                    {item.risk.description}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {item.finding_comment && (
+              <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
+                <div className="font-medium">Comentario del hallazgo</div>
+                <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
+                  {item.finding_comment}
+                </p>
+              </div>
+            )}
+
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                <div className="font-medium">Acciones recomendadas</div>
+
+                {item.recommended_actions.length > 0 ? (
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                    {item.recommended_actions.map((action, actionIndex) => (
+                      <li key={actionIndex}>{action}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-muted-foreground">
+                    No se registraron acciones recomendadas.
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                <div className="font-medium">Evidencia esperada</div>
+
+                {item.expected_evidence.length > 0 ? (
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                    {item.expected_evidence.map((evidence, evidenceIndex) => (
+                      <li key={evidenceIndex}>{evidence}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-muted-foreground">
+                    Documento, registro, captura, fotografía o validación que
+                    demuestre la corrección.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-md border p-4">
+              <div className="mb-3 font-medium">Completar action plan</div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label>Acción correctiva</Label>
+                  <Textarea
+                    value={item.corrective_action ?? ""}
+                    onChange={(e) =>
+                      updateItem(item.id, {
+                        corrective_action: e.target.value,
+                      })
+                    }
+                    placeholder="Describe la acción correctiva"
+                    rows={3}
+                    maxLength={3000}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Responsable</Label>
+                  <Input
+                    value={item.responsible_name ?? ""}
+                    onChange={(e) =>
+                      updateItem(item.id, {
+                        responsible_name: e.target.value,
+                      })
+                    }
+                    placeholder="Nombre del responsable"
+                    maxLength={200}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Fecha compromiso</Label>
+                  <div className="relative">
+                    <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      type="date"
+                      className="pl-9"
+                      value={item.due_date ?? ""}
+                      onChange={(e) =>
+                        updateItem(item.id, {
+                          due_date: e.target.value || null,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Estado</Label>
+                  <select
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={item.status}
+                    onChange={(e) =>
+                      updateItem(item.id, {
+                        status: e.target.value as ActionPlanStatus,
+                      })
+                    }
+                  >
+                    <option value="pending">Pendiente</option>
+                    <option value="in_progress">En progreso</option>
+                    <option value="closed">Cerrado</option>
+                    <option value="cancelled">Cancelado</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label>Comentario de cierre</Label>
+                  <Textarea
+                    value={item.closure_comment ?? ""}
+                    onChange={(e) =>
+                      updateItem(item.id, {
+                        closure_comment: e.target.value,
+                      })
+                    }
+                    placeholder="Describe cómo se corrigió o cerró el hallazgo"
+                    rows={3}
+                    maxLength={3000}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-md border bg-muted/30 p-3">
+                <div className="mb-2 flex items-center gap-1 font-medium text-sm">
+                  <FileImage className="h-4 w-4" />
+                  Evidencia de cierre
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="hidden"
+                      onChange={(e) =>
+                        e.target.files?.[0] &&
+                        uploadClosureEvidence(item, e.target.files[0])
+                      }
+                    />
+
+                    <span className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
+                      <Upload className="h-4 w-4" />
+                      {uploadingEvidenceId === item.id
+                        ? "Uploading…"
+                        : hasClosureEvidence
+                          ? "Replace evidence"
+                          : "Upload evidence"}
+                    </span>
+                  </label>
+
+                  {hasClosureEvidence && (
+                    <>
+                      <span className="max-w-xs truncate text-sm text-muted-foreground">
+                        {item.closure_evidence_name ||
+                          item.closure_evidence_path?.split("/").pop()}
+                      </span>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openClosureEvidenceFile(item)}
+                        disabled={
+                          openingEvidence === item.closure_evidence_path
+                        }
+                      >
+                        <Eye className="mr-1 h-4 w-4" />
+                        {openingEvidence === item.closure_evidence_path
+                          ? "Opening…"
+                          : "Open evidence"}
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 flex justify-end">
+                <Button
+                  onClick={() => saveItem(item)}
+                  disabled={savingId === item.id}
+                >
+                  <Save className="mr-2 h-4 w-4" />
+                  {savingId === item.id ? "Saving…" : "Guardar action plan"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (authLoading || loading) {
     return <div className="p-6 text-muted-foreground">Loading…</div>;
   }
@@ -602,36 +979,28 @@ function ActionPlansPage() {
   }
 
   return (
-    <div className="container mx-auto max-w-7xl py-8">
-      <div className="mb-6">
-        <Button variant="ghost" size="sm" asChild>
+    <div className="container mx-auto max-w-6xl py-8">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <ListTodo className="h-6 w-6 text-muted-foreground" />
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Action Plans
+            </h1>
+          </div>
+
+          <p className="mt-1 text-muted-foreground">
+            Gestiona los planes de acción generados desde los hallazgos de los
+            Surveys, agrupados por Audit y Survey.
+          </p>
+        </div>
+
+        <Button variant="outline" asChild>
           <Link to="/surveys">
-            <ArrowLeft className="mr-1 h-4 w-4" />
+            <ArrowLeft className="mr-2 h-4 w-4" />
             Back to surveys
           </Link>
         </Button>
-      </div>
-
-      <div
-        className="mb-6 rounded-lg border bg-card p-6"
-        style={{ boxShadow: "var(--shadow-card)" }}
-      >
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <ListTodo className="h-6 w-6 text-muted-foreground" />
-              <h1 className="text-2xl font-semibold tracking-tight">
-                Action Plans
-              </h1>
-            </div>
-
-            <p className="mt-2 text-muted-foreground">
-              Aquí se concentran los hallazgos generados desde los Surveys,
-              agrupados por <span className="font-medium">Audit</span> y luego
-              por <span className="font-medium">Survey</span>.
-            </p>
-          </div>
-        </div>
       </div>
 
       <div className="mb-6 grid gap-4 md:grid-cols-5">
@@ -727,404 +1096,163 @@ function ActionPlansPage() {
       </div>
 
       {groupedByAudit.length === 0 ? (
-        <div
-          className="rounded-lg border bg-card p-8 text-center text-muted-foreground"
-          style={{ boxShadow: "var(--shadow-card)" }}
-        >
+        <div className="rounded-lg border border-dashed bg-card p-16 text-center text-muted-foreground">
+          <ListTodo className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
           No hay action plans para mostrar con el filtro actual.
         </div>
       ) : (
         <div className="space-y-8">
           {groupedByAudit.map((auditGroup) => (
-            <div
-              key={auditGroup.auditId ?? "no-audit"}
-              className="rounded-xl border bg-card p-6"
-              style={{ boxShadow: "var(--shadow-card)" }}
-            >
-              <div className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b pb-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <FolderKanban className="h-5 w-5 text-muted-foreground" />
+            <div key={auditGroup.auditId ?? "no-audit"} className="space-y-4">
+              <div
+                className="rounded-lg border bg-card p-5"
+                style={{ boxShadow: "var(--shadow-card)" }}
+              >
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <FolderKanban className="h-5 w-5 text-muted-foreground" />
+                      <h2 className="text-xl font-semibold tracking-tight">
+                        {auditGroup.auditName}
+                      </h2>
+                    </div>
 
-                    <h2 className="text-xl font-semibold tracking-tight">
-                      {auditGroup.auditName}
-                    </h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {auditGroup.surveys.length} survey(s),{" "}
+                      {auditGroup.totalItems} action plan(s).
+                    </p>
                   </div>
 
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {auditGroup.surveys.length} survey(s),{" "}
-                    {auditGroup.totalItems} action plan(s). Cerrados:{" "}
-                    {auditGroup.closedItems} / {auditGroup.totalItems}.
-                  </p>
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-sm ${
+                      auditGroup.progressPercent === 100
+                        ? "bg-success/15 text-success"
+                        : "bg-warning/15 text-warning-foreground"
+                    }`}
+                  >
+                    {auditGroup.progressPercent === 100 ? (
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    ) : (
+                      <Clock className="h-3.5 w-3.5" />
+                    )}
+                    {auditGroup.progressPercent}% cerrado
+                  </span>
+                </div>
+
+                <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    Cerrados: {auditGroup.closedItems} /{" "}
+                    {auditGroup.totalItems}
+                  </span>
+                  <span>
+                    Pendientes: {auditGroup.pendingItems} · En progreso:{" "}
+                    {auditGroup.inProgressItems}
+                  </span>
+                </div>
+
+                <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                  <div
+                    className={`h-full ${progressClass(
+                      auditGroup.progressPercent
+                    )}`}
+                    style={{
+                      width: `${auditGroup.progressPercent}%`,
+                    }}
+                  />
                 </div>
               </div>
 
-              <div className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {auditGroup.surveys.map((surveyGroup) => (
                   <div
                     key={surveyGroup.surveyId}
-                    className="rounded-lg border bg-background p-5"
+                    className="flex min-h-[280px] flex-col rounded-lg border bg-card p-5"
+                    style={{ boxShadow: "var(--shadow-card)" }}
                   >
-                    <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <h3 className="text-lg font-semibold tracking-tight">
-                          {surveyGroup.surveyTitle}
-                        </h3>
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
 
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {surveyGroup.totalItems} action plan(s). Cerrados:{" "}
-                          {surveyGroup.closedItems} / {surveyGroup.totalItems}.
-                        </p>
-                      </div>
-
-                      <Button variant="outline" size="sm" asChild>
-                        <Link
-                          to="/surveys/$id/progress"
-                          params={{ id: surveyGroup.surveyId }}
-                        >
-                          <Eye className="mr-2 h-4 w-4" />
-                          View progress
-                        </Link>
-                      </Button>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-sm ${
+                          surveyGroup.progressPercent === 100
+                            ? "bg-success/15 text-success"
+                            : "bg-warning/15 text-warning-foreground"
+                        }`}
+                      >
+                        {surveyGroup.progressPercent === 100 ? (
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        ) : (
+                          <Clock className="h-3.5 w-3.5" />
+                        )}
+                        {surveyGroup.progressPercent}% cerrado
+                      </span>
                     </div>
 
-                    <div className="space-y-4">
-                      {surveyGroup.items.map((item, index) => {
-                        const referenceText = buildReferenceText(
-                          item.reference
-                        );
-                        const hasClosureEvidence =
-                          !!item.closure_evidence_path;
+                    <h3 className="line-clamp-2 text-lg font-semibold tracking-tight">
+                      {surveyGroup.surveyTitle}
+                    </h3>
 
-                        return (
+                    <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+                      {surveyGroup.totalItems} action plan(s) generados por
+                      hallazgos del survey.
+                    </p>
+
+                    <div className="mt-auto pt-4">
+                      <div className="mb-4 space-y-2">
+                        <div className="flex items-center justify-between text-sm text-muted-foreground">
+                          <span>Cerrados</span>
+                          <span>
+                            {surveyGroup.closedItems} / {surveyGroup.totalItems}
+                          </span>
+                        </div>
+
+                        <div className="h-2 rounded-full bg-secondary overflow-hidden">
                           <div
-                            key={item.id}
-                            className="rounded-lg border bg-card p-4"
-                          >
-                            <div className="flex flex-wrap items-start gap-3">
-                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-sm font-semibold text-destructive">
-                                {index + 1}
-                              </div>
+                            className={`h-full ${progressClass(
+                              surveyGroup.progressPercent
+                            )}`}
+                            style={{
+                              width: `${surveyGroup.progressPercent}%`,
+                            }}
+                          />
+                        </div>
 
-                              <div className="flex-1 min-w-64">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="inline-flex items-center gap-1 rounded-full border border-destructive/30 bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive">
-                                    <AlertTriangle className="h-3 w-3" />
-                                    Hallazgo
-                                  </span>
-
-                                  <span
-                                    className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${statusClass(
-                                      item.status
-                                    )}`}
-                                  >
-                                    {statusLabel(item.status)}
-                                  </span>
-
-                                  {item.risk?.severity && (
-                                    <span className="rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">
-                                      Severidad: {item.risk.severity}
-                                    </span>
-                                  )}
-
-                                  {item.risk?.category && (
-                                    <span className="rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">
-                                      Categoría: {item.risk.category}
-                                    </span>
-                                  )}
-                                </div>
-
-                                <h4 className="mt-3 font-semibold tracking-tight">
-                                  {item.question_label}
-                                </h4>
-
-                                <div className="mt-1 text-sm text-muted-foreground">
-                                  <span className="font-medium">Sección: </span>
-                                  {item.section_title}
-                                </div>
-
-                                <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                                  <User className="h-4 w-4" />
-                                  <span>
-                                    <span className="font-medium">
-                                      Auditor:{" "}
-                                    </span>
-                                    {item.auditor_name}
-                                  </span>
-                                  {item.auditor_email && (
-                                    <span>({item.auditor_email})</span>
-                                  )}
-                                </div>
-
-                                {referenceText && (
-                                  <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
-                                    <div className="font-medium">
-                                      Referencia normativa
-                                    </div>
-
-                                    <div className="text-muted-foreground">
-                                      {referenceText}
-                                    </div>
-
-                                    {item.reference?.requirement && (
-                                      <div className="mt-1 text-muted-foreground">
-                                        {item.reference.requirement}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-
-                                {(item.risk?.title ||
-                                  item.risk?.description) && (
-                                  <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
-                                    <div className="font-medium">
-                                      Riesgo asociado
-                                    </div>
-
-                                    {item.risk?.title && (
-                                      <div className="text-muted-foreground">
-                                        {item.risk.title}
-                                      </div>
-                                    )}
-
-                                    {item.risk?.description && (
-                                      <p className="mt-1 text-muted-foreground">
-                                        {item.risk.description}
-                                      </p>
-                                    )}
-                                  </div>
-                                )}
-
-                                {item.finding_comment && (
-                                  <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
-                                    <div className="font-medium">
-                                      Comentario del hallazgo
-                                    </div>
-                                    <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
-                                      {item.finding_comment}
-                                    </p>
-                                  </div>
-                                )}
-
-                                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                                  <div className="rounded-md border bg-muted/30 p-3 text-sm">
-                                    <div className="font-medium">
-                                      Acciones recomendadas
-                                    </div>
-
-                                    {item.recommended_actions.length > 0 ? (
-                                      <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
-                                        {item.recommended_actions.map(
-                                          (action, actionIndex) => (
-                                            <li key={actionIndex}>{action}</li>
-                                          )
-                                        )}
-                                      </ul>
-                                    ) : (
-                                      <p className="mt-2 text-muted-foreground">
-                                        No se registraron acciones recomendadas.
-                                      </p>
-                                    )}
-                                  </div>
-
-                                  <div className="rounded-md border bg-muted/30 p-3 text-sm">
-                                    <div className="font-medium">
-                                      Evidencia esperada
-                                    </div>
-
-                                    {item.expected_evidence.length > 0 ? (
-                                      <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
-                                        {item.expected_evidence.map(
-                                          (evidence, evidenceIndex) => (
-                                            <li key={evidenceIndex}>
-                                              {evidence}
-                                            </li>
-                                          )
-                                        )}
-                                      </ul>
-                                    ) : (
-                                      <p className="mt-2 text-muted-foreground">
-                                        Documento, registro, captura, fotografía
-                                        o validación que demuestre la
-                                        corrección.
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-
-                                <div className="mt-4 rounded-md border p-4">
-                                  <div className="mb-3 font-medium">
-                                    Completar action plan
-                                  </div>
-
-                                  <div className="grid gap-4 md:grid-cols-2">
-                                    <div className="space-y-1.5 md:col-span-2">
-                                      <Label>Acción correctiva</Label>
-                                      <Textarea
-                                        value={item.corrective_action ?? ""}
-                                        onChange={(e) =>
-                                          updateItem(item.id, {
-                                            corrective_action: e.target.value,
-                                          })
-                                        }
-                                        placeholder="Describe la acción correctiva"
-                                        rows={3}
-                                        maxLength={3000}
-                                      />
-                                    </div>
-
-                                    <div className="space-y-1.5">
-                                      <Label>Responsable</Label>
-                                      <Input
-                                        value={item.responsible_name ?? ""}
-                                        onChange={(e) =>
-                                          updateItem(item.id, {
-                                            responsible_name: e.target.value,
-                                          })
-                                        }
-                                        placeholder="Nombre del responsable"
-                                        maxLength={200}
-                                      />
-                                    </div>
-
-                                    <div className="space-y-1.5">
-                                      <Label>Fecha compromiso</Label>
-                                      <div className="relative">
-                                        <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                        <Input
-                                          type="date"
-                                          className="pl-9"
-                                          value={item.due_date ?? ""}
-                                          onChange={(e) =>
-                                            updateItem(item.id, {
-                                              due_date:
-                                                e.target.value || null,
-                                            })
-                                          }
-                                        />
-                                      </div>
-                                    </div>
-
-                                    <div className="space-y-1.5">
-                                      <Label>Estado</Label>
-                                      <select
-                                        className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                                        value={item.status}
-                                        onChange={(e) =>
-                                          updateItem(item.id, {
-                                            status: e.target
-                                              .value as ActionPlanStatus,
-                                          })
-                                        }
-                                      >
-                                        <option value="pending">
-                                          Pendiente
-                                        </option>
-                                        <option value="in_progress">
-                                          En progreso
-                                        </option>
-                                        <option value="closed">Cerrado</option>
-                                        <option value="cancelled">
-                                          Cancelado
-                                        </option>
-                                      </select>
-                                    </div>
-
-                                    <div className="space-y-1.5 md:col-span-2">
-                                      <Label>Comentario de cierre</Label>
-                                      <Textarea
-                                        value={item.closure_comment ?? ""}
-                                        onChange={(e) =>
-                                          updateItem(item.id, {
-                                            closure_comment: e.target.value,
-                                          })
-                                        }
-                                        placeholder="Describe cómo se corrigió o cerró el hallazgo"
-                                        rows={3}
-                                        maxLength={3000}
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <div className="mt-4 rounded-md border bg-muted/30 p-3">
-                                    <div className="mb-2 flex items-center gap-1 font-medium text-sm">
-                                      <FileImage className="h-4 w-4" />
-                                      Evidencia de cierre
-                                    </div>
-
-                                    <div className="flex flex-wrap items-center gap-3">
-                                      <label className="cursor-pointer">
-                                        <input
-                                          type="file"
-                                          accept="image/*,application/pdf"
-                                          className="hidden"
-                                          onChange={(e) =>
-                                            e.target.files?.[0] &&
-                                            uploadClosureEvidence(
-                                              item,
-                                              e.target.files[0]
-                                            )
-                                          }
-                                        />
-
-                                        <span className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
-                                          <Upload className="h-4 w-4" />
-                                          {uploadingEvidenceId === item.id
-                                            ? "Uploading…"
-                                            : hasClosureEvidence
-                                              ? "Replace evidence"
-                                              : "Upload evidence"}
-                                        </span>
-                                      </label>
-
-                                      {hasClosureEvidence && (
-                                        <>
-                                          <span className="max-w-xs truncate text-sm text-muted-foreground">
-                                            {item.closure_evidence_name ||
-                                              item.closure_evidence_path
-                                                ?.split("/")
-                                                .pop()}
-                                          </span>
-
-                                          <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() =>
-                                              openClosureEvidenceFile(item)
-                                            }
-                                            disabled={
-                                              openingEvidence ===
-                                              item.closure_evidence_path
-                                            }
-                                          >
-                                            <Eye className="mr-1 h-4 w-4" />
-                                            {openingEvidence ===
-                                            item.closure_evidence_path
-                                              ? "Opening…"
-                                              : "Open evidence"}
-                                          </Button>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  <div className="mt-4 flex justify-end">
-                                    <Button
-                                      onClick={() => saveItem(item)}
-                                      disabled={savingId === item.id}
-                                    >
-                                      <Save className="mr-2 h-4 w-4" />
-                                      {savingId === item.id
-                                        ? "Saving…"
-                                        : "Guardar action plan"}
-                                    </Button>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
+                        <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+                          <div className="rounded-md border bg-muted/30 px-2 py-1 text-center">
+                            Pend. {surveyGroup.pendingItems}
                           </div>
-                        );
-                      })}
+                          <div className="rounded-md border bg-muted/30 px-2 py-1 text-center">
+                            Prog. {surveyGroup.inProgressItems}
+                          </div>
+                          <div className="rounded-md border bg-muted/30 px-2 py-1 text-center">
+                            Canc. {surveyGroup.cancelledItems}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <Button variant="outline" size="sm" asChild>
+                          <Link
+                            to="/surveys/$id/progress"
+                            params={{ id: surveyGroup.surveyId }}
+                          >
+                            <Eye className="mr-2 h-4 w-4" />
+                            View progress
+                          </Link>
+                        </Button>
+
+                        <details className="w-full">
+                          <summary className="mt-3 cursor-pointer select-none rounded-md border bg-background px-3 py-2 text-center text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+                            View action plans
+                          </summary>
+
+                          <div className="mt-4 space-y-4">
+                            {surveyGroup.items.map((item, index) =>
+                              renderActionPlanItem(item, index)
+                            )}
+                          </div>
+                        </details>
+                      </div>
                     </div>
                   </div>
                 ))}
