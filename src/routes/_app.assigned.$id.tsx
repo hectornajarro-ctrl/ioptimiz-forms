@@ -216,9 +216,7 @@ function FillSurvey() {
 
       const { data: existing } = await supabase
         .from("survey_responses")
-        .select(
-          "id,answers,draft_answers,submitted"
-        )
+        .select("id,answers,draft_answers,submitted")
         .eq("survey_id", id)
         .eq("user_id", user.id)
         .maybeSingle();
@@ -274,9 +272,7 @@ function FillSurvey() {
           .select("user_id")
           .eq("group_id", groupId);
 
-        const isMember = !!existingMembers?.some(
-          (m) => m.user_id === user.id
-        );
+        const isMember = !!existingMembers?.some((m) => m.user_id === user.id);
 
         const isUnclaimed = (existingMembers?.length ?? 0) === 0;
 
@@ -516,6 +512,37 @@ function FillSurvey() {
     }
   };
 
+  const renderActionButtons = (position: "top" | "bottom") => {
+    if (submitted) return null;
+
+    return (
+      <div
+        className={`flex flex-wrap items-center justify-end gap-3 ${
+          position === "top" ? "mb-6" : "mt-6"
+        }`}
+      >
+        <Button
+          variant="outline"
+          onClick={() => persist({ draft: true })}
+          disabled={saving}
+        >
+          <FileText className="h-4 w-4 mr-2" />
+          {saving ? "Saving…" : "Save draft"}
+        </Button>
+
+        <Button variant="outline" onClick={() => persist()} disabled={saving}>
+          <Save className="h-4 w-4 mr-2" />
+          {saving ? "Saving…" : "Save progress"}
+        </Button>
+
+        <Button onClick={() => persist({ submit: true })} disabled={saving}>
+          <CheckCircle2 className="h-4 w-4 mr-2" />
+          {saving ? "Saving…" : "Submit audit"}
+        </Button>
+      </div>
+    );
+  };
+
   if (!survey) {
     return <div className="p-6 text-muted-foreground">Loading…</div>;
   }
@@ -544,41 +571,47 @@ function FillSurvey() {
         className="rounded-lg border bg-card p-6 mb-6"
         style={{ boxShadow: "var(--shadow-card)" }}
       >
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {survey.title}
-        </h1>
+        <div className="flex flex-wrap items-start gap-4">
+          <div className="flex-1 min-w-64">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {survey.title}
+            </h1>
 
-        {survey.description && (
-          <p className="text-muted-foreground mt-2">{survey.description}</p>
-        )}
-
-        {!submitted && (
-          <div className="mt-4 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
-            <span className="font-medium">Save draft</span> keeps the answers
-            only as your working draft. <span className="font-medium">Save progress</span>{" "}
-            publishes your current progress so your Leader/Admin can see it.
+            {survey.description && (
+              <p className="text-muted-foreground mt-2">{survey.description}</p>
+            )}
           </div>
-        )}
 
-        {submitted && (
-          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-md border bg-muted/30 p-3 text-sm">
-            <div className="text-muted-foreground">
-              You've submitted this audit. Answers below are read-only.
-            </div>
-
+          {submitted && (
             <Button
               variant="outline"
               size="sm"
               onClick={exportReport}
               disabled={exporting}
-              className="ml-auto"
             >
               <Download className="h-4 w-4 mr-1" />
               {exporting ? "Generating…" : "Export report (PDF)"}
             </Button>
+          )}
+        </div>
+
+        {!submitted && (
+          <div className="mt-4 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+            <span className="font-medium">Save draft</span> keeps the answers
+            only as your working draft.{" "}
+            <span className="font-medium">Save progress</span> publishes your
+            current progress so your Leader/Admin can see it.
+          </div>
+        )}
+
+        {submitted && (
+          <div className="mt-4 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+            You've submitted this audit. Answers below are read-only.
           </div>
         )}
       </div>
+
+      {renderActionButtons("top")}
 
       {survey.pdf_path && (
         <div
@@ -878,32 +911,7 @@ function FillSurvey() {
         ))}
       </div>
 
-      {!submitted && (
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <Button
-            variant="outline"
-            onClick={() => persist({ draft: true })}
-            disabled={saving}
-          >
-            <FileText className="h-4 w-4 mr-2" />
-            {saving ? "Saving…" : "Save draft"}
-          </Button>
-
-          <Button
-            variant="outline"
-            onClick={() => persist()}
-            disabled={saving}
-          >
-            <Save className="h-4 w-4 mr-2" />
-            {saving ? "Saving…" : "Save progress"}
-          </Button>
-
-          <Button onClick={() => persist({ submit: true })} disabled={saving}>
-            <CheckCircle2 className="h-4 w-4 mr-2" />
-            Submit audit
-          </Button>
-        </div>
-      )}
+      {renderActionButtons("bottom")}
     </div>
   );
 }
