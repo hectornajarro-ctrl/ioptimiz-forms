@@ -379,28 +379,31 @@ function FillSurvey() {
         return;
       }
 
-      const groupId = (s as any).assigned_group_id as string | null;
+      const auditId = (s as any).assigned_group_id as string | null;
 
-      if (groupId) {
-        const { data: grp } = await supabase
-          .from("audit_groups")
+      if (auditId) {
+        const { data: audit } = await supabase
+          .from("audits" as any)
           .select("open_enrollment")
-          .eq("id", groupId)
+          .eq("id", auditId)
           .maybeSingle();
 
         const { data: existingMembers } = await supabase
-          .from("audit_group_members")
+          .from("audits_members" as any)
           .select("user_id")
-          .eq("group_id", groupId);
+          .eq("group_id", auditId);
 
-        const isMember = !!existingMembers?.some((m) => m.user_id === user.id);
+        const isMember = !!(existingMembers ?? []).some(
+          (m: any) => m.user_id === user.id
+        );
+
         const isUnclaimed = (existingMembers?.length ?? 0) === 0;
 
-        if (!isMember && grp?.open_enrollment && isUnclaimed) {
+        if (!isMember && (audit as any)?.open_enrollment && isUnclaimed) {
           const { error: claimErr } = await supabase
-            .from("audit_group_members")
+            .from("audits_members" as any)
             .insert({
-              group_id: groupId,
+              group_id: auditId,
               user_id: user.id,
             });
 
@@ -411,7 +414,7 @@ function FillSurvey() {
           }
 
           toast.success("You claimed this audit");
-        } else if (!isMember && grp?.open_enrollment && !isUnclaimed) {
+        } else if (!isMember && (audit as any)?.open_enrollment && !isUnclaimed) {
           toast.error("This audit has already been claimed by another member");
           navigate({ to: "/assigned" });
           return;
