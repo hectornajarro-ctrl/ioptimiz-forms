@@ -1,5 +1,4 @@
 // Extract structured compliance audit schema from a PDF using Lovable AI
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
@@ -14,7 +13,7 @@ const FORM_SCHEMA_TOOL = {
   function: {
     name: "build_form_schema",
     description:
-      "Convert an audit, checklist, regulation, policy or standard PDF into a structured compliance audit form schema with summary, audit objective, auditor actions, sections, questions, normative references, risks, recommended actions and expected evidence.",
+      "Convert an audit, checklist, regulation, policy or standard PDF into a structured compliance audit form schema with summary, audit objective, auditor actions, sections, questions, normative references, risks, impacts, recommended actions and expected evidence.",
     parameters: {
       type: "object",
       properties: {
@@ -24,7 +23,8 @@ const FORM_SCHEMA_TOOL = {
         },
         description: {
           type: "string",
-          description: "One-sentence description of the audit.",
+          description:
+            "One-sentence description of the audit, in Spanish.",
         },
         summary: {
           type: "string",
@@ -68,6 +68,7 @@ const FORM_SCHEMA_TOOL = {
                     },
                     required: {
                       type: "boolean",
+                      description: "Usually true.",
                     },
                     options: {
                       type: "array",
@@ -115,16 +116,17 @@ const FORM_SCHEMA_TOOL = {
                     risk: {
                       type: "object",
                       description:
-                        "Risk associated with a finding or non-compliance. Usually triggered when the answer is No.",
+                        "Risk and impact associated with a finding or non-compliance. Usually triggered when the answer is No.",
                       properties: {
                         title: {
                           type: "string",
-                          description: "Short risk title.",
+                          description:
+                            "Short Spanish risk title. Must be specific to the question.",
                         },
                         description: {
                           type: "string",
                           description:
-                            "Risk description if the requirement is not met.",
+                            "Spanish explanation of the risk if the requirement is not met.",
                         },
                         category: {
                           type: "string",
@@ -144,14 +146,36 @@ const FORM_SCHEMA_TOOL = {
                         severity: {
                           type: "string",
                           enum: ["Low", "Medium", "High", "Critical"],
+                          description:
+                            "Severity of the risk if the finding is confirmed.",
                         },
                         likelihood: {
                           type: "string",
                           enum: ["Low", "Medium", "High"],
+                          description:
+                            "Likelihood that the risk materializes if the organization does not correct the finding.",
                         },
                         impact: {
                           type: "string",
                           enum: ["Low", "Medium", "High"],
+                          description:
+                            "Impact level for the business, operation, safety, legal compliance, reputation or continuity.",
+                        },
+                        business_impact: {
+                          type: "string",
+                          description:
+                            "Spanish explanation of the operational, legal, reputational, safety, financial or business impact of not correcting the non-compliance.",
+                        },
+                        auditor_argument: {
+                          type: "string",
+                          description:
+                            "Short Spanish argument the auditor can use to explain why this finding matters to the audited company.",
+                        },
+                        benefits_of_correction: {
+                          type: "array",
+                          items: { type: "string" },
+                          description:
+                            "Spanish list of benefits of correcting this finding, such as compliance, traceability, safety, continuity, efficiency or risk reduction.",
                         },
                       },
                     },
@@ -159,7 +183,7 @@ const FORM_SCHEMA_TOOL = {
                       type: "array",
                       items: { type: "string" },
                       description:
-                        "Corrective or preventive actions recommended if a finding is detected.",
+                        "Corrective or preventive actions recommended if a finding is detected. Must be specific, auditable and useful.",
                     },
                     expected_evidence: {
                       type: "array",
@@ -213,7 +237,15 @@ function cleanObject(value: unknown): Record<string, unknown> | undefined {
 
   for (const [key, raw] of Object.entries(obj)) {
     if (raw === null || raw === undefined) continue;
+
     if (typeof raw === "string" && raw.trim() === "") continue;
+
+    if (Array.isArray(raw)) {
+      const arr = asArray(raw);
+      if (arr.length === 0) continue;
+      cleaned[key] = arr;
+      continue;
+    }
 
     cleaned[key] = typeof raw === "string" ? raw.trim() : raw;
   }
@@ -282,7 +314,7 @@ function buildFallbackObjective(sections: any[]): string {
     return "Revisar el PDF y confirmar manualmente los requisitos que deben convertirse en controles o preguntas de auditoría.";
   }
 
-  return "Verificar que la organización cumpla con los requisitos identificados en el PDF, revisando evidencias, responsables, registros y controles asociados a cada pregunta de auditoría.";
+  return "Verificar que la organización cumpla con los requisitos identificados en el PDF, revisando evidencias, responsables, registros, controles asociados, riesgos de incumplimiento e impacto para la operación.";
 }
 
 function buildFallbackActions(sections: any[]): string[] {
@@ -297,20 +329,107 @@ function buildFallbackActions(sections: any[]): string[] {
     "Solicitar políticas, procedimientos y registros relacionados con los requisitos identificados.",
     "Entrevistar a los responsables de los procesos auditados.",
     "Validar evidencias documentales, fechas, aprobaciones y responsables.",
+    "Evaluar el riesgo e impacto de cada incumplimiento identificado.",
     "Registrar los hallazgos cuando una respuesta sea No o exista evidencia insuficiente.",
     "Definir acciones correctivas para cada incumplimiento identificado.",
   ];
 }
 
+function buildFallbackRisk(questionLabel: string): Record<string, unknown> {
+  return {
+    title: "Riesgo de incumplimiento del requisito auditado",
+    description: `Si no se cumple el requisito asociado a la pregunta "${questionLabel}", la organización podría quedar expuesta a incumplimientos normativos, debilidades de control, falta de trazabilidad y observaciones durante auditorías internas o externas.`,
+    category: "Compliance",
+    severity: "Medium",
+    likelihood: "Medium",
+    impact: "Medium",
+    business_impact:
+      "La falta de cumplimiento puede afectar la trazabilidad, la capacidad de demostrar controles efectivos, la continuidad operativa y la confianza de partes interesadas, clientes o reguladores.",
+    auditor_argument:
+      "Este punto debe corregirse porque permite demostrar cumplimiento, reducir exposición a hallazgos recurrentes y fortalecer la evidencia objetiva ante auditorías o inspecciones.",
+    benefits_of_correction: [
+      "Mejora la evidencia de cumplimiento.",
+      "Reduce la probabilidad de observaciones o sanciones.",
+      "Fortalece la trazabilidad y responsabilidad del proceso.",
+      "Ayuda a prevenir recurrencia del hallazgo.",
+    ],
+  };
+}
+
+function normalizeRisk(questionLabel: string, value: unknown) {
+  const risk = cleanObject(value) ?? {};
+
+  const normalized: Record<string, unknown> = {
+    ...buildFallbackRisk(questionLabel),
+    ...risk,
+  };
+
+  normalized.title = normalizeString(normalized.title);
+  normalized.description = normalizeString(normalized.description);
+  normalized.category = normalizeString(normalized.category) || "Compliance";
+  normalized.severity = normalizeString(normalized.severity) || "Medium";
+  normalized.likelihood = normalizeString(normalized.likelihood) || "Medium";
+  normalized.impact = normalizeString(normalized.impact) || "Medium";
+  normalized.business_impact = normalizeString(normalized.business_impact);
+  normalized.auditor_argument = normalizeString(normalized.auditor_argument);
+  normalized.benefits_of_correction = asArray(
+    normalized.benefits_of_correction
+  );
+
+  if (!normalized.business_impact) {
+    normalized.business_impact =
+      "La no conformidad puede afectar el cumplimiento, la trazabilidad, la continuidad operativa, la reputación y la capacidad de demostrar control efectivo ante auditorías o inspecciones.";
+  }
+
+  if (!normalized.auditor_argument) {
+    normalized.auditor_argument =
+      "Corregir este hallazgo permite reducir exposición a riesgos, demostrar control y fortalecer la capacidad de la organización para cumplir con sus obligaciones.";
+  }
+
+  if ((normalized.benefits_of_correction as string[]).length === 0) {
+    normalized.benefits_of_correction = [
+      "Mejora la trazabilidad del cumplimiento.",
+      "Reduce la exposición a observaciones o sanciones.",
+      "Fortalece el control interno y la evidencia objetiva.",
+    ];
+  }
+
+  return normalized;
+}
+
+function buildFallbackRecommendedActions(questionLabel: string): string[] {
+  return [
+    `Analizar la causa raíz asociada al incumplimiento de: ${questionLabel}`,
+    "Definir una acción correctiva específica, responsable y fecha compromiso.",
+    "Actualizar o formalizar el procedimiento, registro o control aplicable.",
+    "Recolectar evidencia objetiva que demuestre la corrección del hallazgo.",
+    "Validar la efectividad de la acción correctiva antes del cierre.",
+  ];
+}
+
+function buildFallbackExpectedEvidence(): string[] {
+  return [
+    "Procedimiento, política o instructivo actualizado.",
+    "Registro o evidencia documental del control aplicado.",
+    "Aprobaciones, responsables y fechas de implementación.",
+    "Evidencia fotográfica, captura, reporte o registro del sistema si corresponde.",
+    "Validación del auditor sobre la efectividad de la corrección.",
+  ];
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, {
+      headers: corsHeaders,
+    });
   }
 
   try {
     const { surveyId } = await req.json();
 
-    if (!surveyId) throw new Error("surveyId required");
+    if (!surveyId) {
+      throw new Error("surveyId required");
+    }
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -324,7 +443,9 @@ serve(async (req) => {
 
     const authHeader = req.headers.get("Authorization");
 
-    if (!authHeader) throw new Error("Unauthorized");
+    if (!authHeader) {
+      throw new Error("Unauthorized");
+    }
 
     const userClient = createClient(
       SUPABASE_URL,
@@ -341,9 +462,12 @@ serve(async (req) => {
     );
 
     const { data: userRes } = await userClient.auth.getUser();
+
     const userId = userRes?.user?.id;
 
-    if (!userId) throw new Error("Unauthorized");
+    if (!userId) {
+      throw new Error("Unauthorized");
+    }
 
     const { data: survey, error: sErr } = await admin
       .from("surveys")
@@ -351,7 +475,9 @@ serve(async (req) => {
       .eq("id", surveyId)
       .single();
 
-    if (sErr || !survey) throw new Error("Survey not found");
+    if (sErr || !survey) {
+      throw new Error("Survey not found");
+    }
 
     if (survey.lead_auditor_id !== userId) {
       const { data: roleRow } = await admin
@@ -361,16 +487,22 @@ serve(async (req) => {
         .eq("role", "admin")
         .maybeSingle();
 
-      if (!roleRow) throw new Error("Forbidden");
+      if (!roleRow) {
+        throw new Error("Forbidden");
+      }
     }
 
-    if (!survey.pdf_path) throw new Error("No PDF uploaded");
+    if (!survey.pdf_path) {
+      throw new Error("No PDF uploaded");
+    }
 
     const { data: blob, error: dlErr } = await admin.storage
       .from("survey-pdfs")
       .download(survey.pdf_path);
 
-    if (dlErr || !blob) throw new Error("Could not download PDF");
+    if (dlErr || !blob) {
+      throw new Error("Could not download PDF");
+    }
 
     const buf = new Uint8Array(await blob.arrayBuffer());
 
@@ -383,13 +515,16 @@ serve(async (req) => {
     const b64 = btoa(binary);
 
     const systemPrompt = `
-You are an expert compliance auditor.
+You are an expert senior compliance auditor, risk analyst and action plan specialist.
 
 The PDF may contain regulations, standards, policies, legal requirements, operational procedures, technical requirements, internal controls or audit criteria.
 
 Important language rule:
 - Generate all user-facing text in Spanish.
-- Keep risk enum values exactly as requested: Low, Medium, High, Critical.
+- Keep enum values exactly as requested:
+  - severity: Low, Medium, High, Critical
+  - likelihood: Low, Medium, High
+  - impact: Low, Medium, High
 
 Your task:
 1. Identify auditable obligations from the document.
@@ -405,22 +540,35 @@ Your task:
    - reference.page if identifiable
    - reference.requirement as a short summary of the requirement
    - reference.source_text as a short relevant excerpt or paraphrase
-6. For every question, create a risk that may arise if the auditor answers No.
-7. For every risk, include category, severity, likelihood and impact.
-8. Include recommended corrective/preventive actions.
-9. Include expected evidence the auditor should review.
-10. Be thorough, but do not invent requirements not supported by the PDF.
-11. Risks and actions may be professional suggestions based on the extracted requirement, but the requirement itself must come from the PDF.
-12. Always return questions with type = "yes_no".
-13. Return structured JSON only through the function tool.
-14. You MUST generate a non-empty "summary".
-15. You MUST generate a non-empty "auditor_objective".
-16. You MUST generate at least 5 items in "auditor_actions".
-17. The suggested auditor actions must be concrete, for example: review documents, interview responsible people, inspect evidence, validate logs, verify approvals, check dates, confirm responsibilities or request missing records.
+6. For every question, create a complete risk that may arise if the auditor answers No.
+7. For every risk, include:
+   - title
+   - description
+   - category
+   - severity
+   - likelihood
+   - impact
+   - business_impact
+   - auditor_argument
+   - benefits_of_correction
+8. The risk must help the auditor explain to the audited company why the finding matters.
+9. The business impact must explain operational, legal, safety, financial, reputational, quality or continuity consequences.
+10. The auditor argument must be short, professional and convincing.
+11. The benefits_of_correction must explain the value of correcting the finding.
+12. Include recommended corrective/preventive actions.
+13. Include expected evidence the auditor should review.
+14. Be thorough, but do not invent requirements not supported by the PDF.
+15. Risks, impacts and actions may be professional recommendations based on the extracted requirement, but the requirement itself must come from the PDF.
+16. Always return questions with type = "yes_no".
+17. Return structured JSON only through the function tool.
+18. You MUST generate a non-empty "summary".
+19. You MUST generate a non-empty "auditor_objective".
+20. You MUST generate at least 5 items in "auditor_actions".
+21. The suggested auditor actions must be concrete, for example: review documents, interview responsible people, inspect evidence, validate logs, verify approvals, check dates, confirm responsibilities or request missing records.
 `;
 
     const userInstruction =
-      "Extrae un cuestionario completo de auditoría de cumplimiento desde este PDF. Incluye obligatoriamente resumen del PDF, objetivo del auditor, acciones sugeridas para el auditor, referencias normativas, riesgos por hallazgos, acciones recomendadas y evidencias esperadas por cada pregunta.";
+      "Extrae un cuestionario completo de auditoría de cumplimiento desde este PDF. Incluye obligatoriamente resumen del PDF, objetivo del auditor, acciones sugeridas para el auditor, referencias normativas, riesgos por hallazgos, impacto del incumplimiento, argumento para sustentar el hallazgo, beneficios de corregir, acciones recomendadas y evidencias esperadas por cada pregunta.";
 
     const aiRes = await fetch(
       "https://ai.gateway.lovable.dev/v1/chat/completions",
@@ -504,6 +652,7 @@ Your task:
     }
 
     const aiJson = await aiRes.json();
+
     const toolCall = aiJson.choices?.[0]?.message?.tool_calls?.[0];
 
     if (!toolCall) {
@@ -515,18 +664,28 @@ Your task:
     const sections = (args.sections ?? []).map((sec: any, si: number) => ({
       id: `s${si}_${crypto.randomUUID().slice(0, 8)}`,
       title: String(sec.title ?? `Section ${si + 1}`).trim(),
-      questions: (sec.questions ?? []).map((q: any, qi: number) => ({
-        id: `q${si}_${qi}_${crypto.randomUUID().slice(0, 8)}`,
-        label: String(q.label ?? `Question ${qi + 1}`).trim(),
-        type: "yes_no",
-        required: q.required ?? true,
-        options: [],
-        scale_max: 5,
-        reference: cleanObject(q.reference),
-        risk: cleanObject(q.risk),
-        recommended_actions: asArray(q.recommended_actions),
-        expected_evidence: asArray(q.expected_evidence),
-      })),
+      questions: (sec.questions ?? []).map((q: any, qi: number) => {
+        const label = String(q.label ?? `Question ${qi + 1}`).trim();
+
+        return {
+          id: `q${si}_${qi}_${crypto.randomUUID().slice(0, 8)}`,
+          label,
+          type: "yes_no",
+          required: q.required ?? true,
+          options: [],
+          scale_max: 5,
+          reference: cleanObject(q.reference),
+          risk: normalizeRisk(label, q.risk),
+          recommended_actions:
+            asArray(q.recommended_actions).length > 0
+              ? asArray(q.recommended_actions)
+              : buildFallbackRecommendedActions(label),
+          expected_evidence:
+            asArray(q.expected_evidence).length > 0
+              ? asArray(q.expected_evidence)
+              : buildFallbackExpectedEvidence(),
+        };
+      }),
     }));
 
     const aiAuditorActions = asArray(args.auditor_actions);
@@ -561,7 +720,9 @@ Your task:
       .update(update)
       .eq("id", surveyId);
 
-    if (upErr) throw upErr;
+    if (upErr) {
+      throw upErr;
+    }
 
     const questionCount = sections.reduce(
       (sum: number, section: any) => sum + (section.questions?.length ?? 0),
@@ -576,6 +737,16 @@ Your task:
         has_summary: Boolean(schema.summary),
         has_auditor_objective: Boolean(schema.auditor_objective),
         auditor_actions: schema.auditor_actions.length,
+        has_risks: sections.some((section: any) =>
+          section.questions?.some((question: any) => Boolean(question.risk))
+        ),
+        has_impacts: sections.some((section: any) =>
+          section.questions?.some(
+            (question: any) =>
+              Boolean(question.risk?.impact) ||
+              Boolean(question.risk?.business_impact)
+          )
+        ),
       }),
       {
         headers: {
