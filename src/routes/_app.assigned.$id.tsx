@@ -146,11 +146,26 @@ function getAnswerValue(
   return String(value).trim();
 }
 
+function getAnswerComment(
+  answers: Record<string, ComplianceAnswer>,
+  questionId: string
+): string {
+  const answer = answers[questionId];
+  const comment = answer?.comment;
+
+  if (comment === undefined || comment === null) return "";
+
+  return String(comment).trim();
+}
+
 function isQuestionCompleted(
   answers: Record<string, ComplianceAnswer>,
   questionId: string
 ): boolean {
-  return getAnswerValue(answers, questionId).length > 0;
+  const value = getAnswerValue(answers, questionId);
+  const comment = getAnswerComment(answers, questionId);
+
+  return value.length > 0 && comment.length > 0;
 }
 
 function uniqueValues(values: string[]): string[] {
@@ -226,6 +241,7 @@ function FillSurvey() {
     );
 
     const answerValues = allQuestions
+      .filter((question) => isQuestionCompleted(answers, question.id))
       .map((question) => getAnswerValue(answers, question.id))
       .filter(Boolean);
 
@@ -239,7 +255,7 @@ function FillSurvey() {
       .map((section) => {
         const filteredQuestions = section.questions.filter((question) => {
           const answerValue = getAnswerValue(answers, question.id);
-          const completed = answerValue.length > 0;
+          const completed = isQuestionCompleted(answers, question.id);
 
           if (questionFilter === "pending") {
             return !completed;
@@ -519,14 +535,17 @@ function FillSurvey() {
       const missing = allQuestions.filter((q) => {
         if (!q.required) return false;
 
-        const v = answers[q.id];
+        const value = getAnswerValue(answers, q.id);
+        const comment = getAnswerComment(answers, q.id);
 
-        return !v || typeof v !== "object" || !v.value;
+        return !value || !comment;
       });
 
       if (missing.length) {
         setSaving(false);
-        return toast.error(`${missing.length} required question(s) missing`);
+        return toast.error(
+          `${missing.length} required question(s) missing answer or comment`
+        );
       }
 
       const payload = {
@@ -706,9 +725,7 @@ function FillSurvey() {
 
         {questionFilter === "completed" && (
           <div className="flex items-center gap-2">
-            <Label className="text-xs text-muted-foreground">
-              Respuesta
-            </Label>
+            <Label className="text-xs text-muted-foreground">Respuesta</Label>
 
             <select
               className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
@@ -729,7 +746,8 @@ function FillSurvey() {
 
       <div className="mt-3 text-xs text-muted-foreground">
         Mostrando {visibleQuestionCount} de {allQuestions.length} pregunta(s).
-        Progreso actual:{" "}
+        Para considerarse completada, cada pregunta debe tener respuesta y
+        comentario. Progreso actual:{" "}
         <span className="font-medium">{completedCount}</span> completada(s),{" "}
         <span className="font-medium">{pendingCount}</span> pendiente(s).
         {questionFilter === "completed" && completedValueFilter !== "all" && (
@@ -1087,6 +1105,13 @@ function FillSurvey() {
                             maxLength={2000}
                             rows={2}
                           />
+
+                          {!getAnswerComment(answers, q.id) && (
+                            <p className="text-xs text-muted-foreground">
+                              Para completar esta pregunta, selecciona una
+                              respuesta y agrega un comentario.
+                            </p>
+                          )}
 
                           <div className="flex items-center gap-3">
                             <label className="cursor-pointer">
