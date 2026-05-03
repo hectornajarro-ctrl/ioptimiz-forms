@@ -319,21 +319,9 @@ function SurveyProgress() {
   const stats = useMemo(() => {
     const total = members.length;
     const submitted = members.filter((m) => m.submitted).length;
-    const inProgress = members.filter((m) => !m.submitted && m.progress > 0)
-      .length;
-    const notStarted = members.filter((m) => !m.submitted && m.progress === 0)
-      .length;
 
     const submittedPct =
       total > 0 ? Math.round((submitted / total) * 100) : 0;
-
-    const avgProgress =
-      total > 0
-        ? Math.round(
-            members.reduce((sum, member) => sum + Number(member.progress), 0) /
-              total
-          )
-        : 0;
 
     const totalQuestions = members[0]?.total_questions ?? 0;
 
@@ -373,10 +361,7 @@ function SurveyProgress() {
     return {
       total,
       submitted,
-      inProgress,
-      notStarted,
       submittedPct,
-      avgProgress,
       totalQuestions,
       completedQuestions,
       possibleQuestions,
@@ -714,8 +699,8 @@ function SurveyProgress() {
       const currentQuestionIds = getQuestionIds(surveyRow.schema);
       const totalQuestions = currentQuestionIds.length;
 
-      const { data: groupMembers, error: membersError } = await supabase
-        .from("audit_group_members")
+      const { data: auditMembers, error: membersError } = await supabase
+        .from("audits_members" as any)
         .select("user_id")
         .eq("group_id", surveyRow.assigned_group_id);
 
@@ -725,7 +710,7 @@ function SurveyProgress() {
         return;
       }
 
-      const memberIds = groupMembers?.map((m) => m.user_id) ?? [];
+      const memberIds = ((auditMembers ?? []) as any[]).map((m) => m.user_id);
 
       if (memberIds.length === 0) {
         setMembers([]);
@@ -893,7 +878,7 @@ function SurveyProgress() {
 
       {members.length === 0 ? (
         <div className="rounded-lg border bg-card p-6 text-muted-foreground">
-          No members in the assigned group.
+          No members in the assigned audit.
         </div>
       ) : (
         <>
