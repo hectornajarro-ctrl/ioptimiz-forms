@@ -16,6 +16,7 @@ import {
   Eye,
   FileText,
   Save,
+  ListFilter,
 } from "lucide-react";
 
 type FieldType =
@@ -25,6 +26,8 @@ type FieldType =
   | "multiple_choice"
   | "rating"
   | "file";
+
+type QuestionViewFilter = "all" | "completed" | "pending";
 
 interface AuditReference {
   source_title?: string;
@@ -131,6 +134,21 @@ function normalizeAnswers(value: unknown): Record<string, ComplianceAnswer> {
   return value as Record<string, ComplianceAnswer>;
 }
 
+function isQuestionCompleted(
+  answers: Record<string, ComplianceAnswer>,
+  questionId: string
+): boolean {
+  const answer = answers[questionId];
+
+  return Boolean(
+    answer &&
+      typeof answer === "object" &&
+      answer.value !== undefined &&
+      answer.value !== null &&
+      String(answer.value).trim() !== ""
+  );
+}
+
 function FillSurvey() {
   const { id } = Route.useParams();
   const { user } = useAuth();
@@ -152,29 +170,57 @@ function FillSurvey() {
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [openingPdf, setOpeningPdf] = useState(false);
+  const [questionFilter, setQuestionFilter] =
+    useState<QuestionViewFilter>("all");
 
   const allQuestions = useMemo(
     () => survey?.schema.sections.flatMap((s) => s.questions) ?? [],
     [survey]
   );
 
+  const completedCount = useMemo(() => {
+    return allQuestions.filter((q) => isQuestionCompleted(answers, q.id))
+      .length;
+  }, [allQuestions, answers]);
+
+  const pendingCount = useMemo(() => {
+    return allQuestions.length - completedCount;
+  }, [allQuestions.length, completedCount]);
+
   const progress = useMemo(() => {
     if (allQuestions.length === 0) return 0;
 
-    const filled = allQuestions.filter((q) => {
-      const v = answers[q.id];
+    return Math.round((completedCount / allQuestions.length) * 100);
+  }, [allQuestions.length, completedCount]);
 
-      return (
-        v &&
-        typeof v === "object" &&
-        v.value !== undefined &&
-        v.value !== null &&
-        v.value !== ""
-      );
-    }).length;
+  const filteredSections = useMemo(() => {
+    if (!survey) return [];
 
-    return Math.round((filled / allQuestions.length) * 100);
-  }, [allQuestions, answers]);
+    return survey.schema.sections
+      .map((section) => {
+        const filteredQuestions = section.questions.filter((question) => {
+          const completed = isQuestionCompleted(answers, question.id);
+
+          if (questionFilter === "completed") return completed;
+          if (questionFilter === "pending") return !completed;
+
+          return true;
+        });
+
+        return {
+          ...section,
+          questions: filteredQuestions,
+        };
+      })
+      .filter((section) => section.questions.length > 0);
+  }, [survey, answers, questionFilter]);
+
+  const visibleQuestionCount = useMemo(() => {
+    return filteredSections.reduce(
+      (total, section) => total + section.questions.length,
+      0
+    );
+  }, [filteredSections]);
 
   useEffect(() => {
     if (!user) return;
@@ -438,6 +484,7 @@ function FillSurvey() {
       if (error) return toast.error(error.message);
 
       setSubmitted(true);
+      setQuestionFilter("all");
       toast.success("Submitted ✓");
       return;
     }
@@ -542,6 +589,63 @@ function FillSurvey() {
       </div>
     );
   };
+
+  const renderQuestionFilters = () => (
+    <div
+      className="rounded-lg border bg-card p-4 mb-6"
+      style={{ boxShadow: "var(--shadow-card)" }}
+    >
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2 text-sm font-medium mr-auto">
+          <ListFilter className="h-4 w-4 text-muted-foreground" />
+          Filtro de preguntas
+        </div>
+
+        <Button
+          type="button"
+          variant={questionFilter === "all" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setQuestionFilter("all")}
+        >
+          Ver todo
+          <span className="ml-2 rounded-full bg-background/20 px-2 text-xs">
+            {allQuestions.length}
+          </span>
+        </Button>
+
+        <Button
+          type="button"
+          variant={questionFilter === "completed" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setQuestionFilter("completed")}
+        >
+          Ver completado
+          <span className="ml-2 rounded-full bg-background/20 px-2 text-xs">
+            {completedCount}
+          </span>
+        </Button>
+
+        <Button
+          type="button"
+          variant={questionFilter === "pending" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setQuestionFilter("pending")}
+        >
+          Ver pendiente
+          <span className="ml-2 rounded-full bg-background/20 px-2 text-xs">
+            {pendingCount}
+          </span>
+        </Button>
+      </div>
+
+      <div className="mt-3 text-xs text-muted-foreground">
+        Mostrando {visibleQuestionCount} de {allQuestions.length} pregunta(s).
+        Progreso actual:{" "}
+        <span className="font-medium">{completedCount}</span> completada(s),{" "}
+        <span className="font-medium">{pendingCount}</span> pendiente(s).
+      </div>
+    </div>
+  );
 
   if (!survey) {
     return <div className="p-6 text-muted-foreground">Loading…</div>;
@@ -693,223 +797,238 @@ function FillSurvey() {
         </div>
       )}
 
-      <div className="space-y-6">
-        {survey.schema.sections.map((sec) => (
-          <div
-            key={sec.id}
-            className="rounded-lg border bg-card p-6"
-            style={{ boxShadow: "var(--shadow-card)" }}
-          >
-            <h2 className="text-lg font-semibold tracking-tight mb-4">
-              {sec.title}
-            </h2>
+      {renderQuestionFilters()}
 
-            <div className="space-y-5">
-              {sec.questions.map((q, i) => (
-                <div key={q.id} className="rounded-md border bg-background p-4">
-                  <div className="flex items-start gap-3">
-                    <span className="text-xs text-muted-foreground mt-1 w-6 shrink-0">
-                      {i + 1}.
-                    </span>
+      {visibleQuestionCount === 0 ? (
+        <div className="rounded-lg border border-dashed bg-card p-8 text-center text-muted-foreground">
+          No hay preguntas para mostrar con el filtro seleccionado.
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {filteredSections.map((sec) => (
+            <div
+              key={sec.id}
+              className="rounded-lg border bg-card p-6"
+              style={{ boxShadow: "var(--shadow-card)" }}
+            >
+              <h2 className="text-lg font-semibold tracking-tight mb-4">
+                {sec.title}
+              </h2>
 
-                    <div className="flex-1 space-y-3">
-                      <div>
-                        <Label className="text-base">
-                          {q.label}
-                          {q.required && (
-                            <span className="text-destructive ml-1">*</span>
-                          )}
-                        </Label>
-                      </div>
+              <div className="space-y-5">
+                {sec.questions.map((q, i) => (
+                  <div
+                    key={q.id}
+                    className="rounded-md border bg-background p-4"
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="text-xs text-muted-foreground mt-1 w-6 shrink-0">
+                        {i + 1}.
+                      </span>
 
-                      <div className="space-y-3">
-                        <div className="flex flex-wrap gap-2">
-                          {[
-                            {
-                              v: "Yes",
-                              cls: "data-[on=true]:bg-success data-[on=true]:text-white data-[on=true]:border-success",
-                            },
-                            {
-                              v: "No",
-                              cls: "data-[on=true]:bg-destructive data-[on=true]:text-destructive-foreground data-[on=true]:border-destructive",
-                            },
-                            {
-                              v: "N/A",
-                              cls: "data-[on=true]:bg-muted data-[on=true]:text-foreground data-[on=true]:border-muted-foreground/40",
-                            },
-                          ].map(({ v, cls }) => {
-                            const on = getCompVal(q.id).value === v;
-
-                            return (
-                              <button
-                                key={v}
-                                type="button"
-                                data-on={on}
-                                disabled={submitted}
-                                onClick={() => setCompField(q.id, { value: v })}
-                                className={`px-4 py-2 rounded-md border text-sm transition-colors bg-background hover:bg-accent hover:text-accent-foreground ${cls}`}
-                              >
-                                {v}
-                              </button>
-                            );
-                          })}
+                      <div className="flex-1 space-y-3">
+                        <div>
+                          <Label className="text-base">
+                            {q.label}
+                            {q.required && (
+                              <span className="text-destructive ml-1">*</span>
+                            )}
+                          </Label>
                         </div>
 
-                        {hasReference(q) && (
-                          <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-2">
-                            <div className="font-medium">
-                              Normative reference
-                            </div>
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap gap-2">
+                            {[
+                              {
+                                v: "Yes",
+                                cls: "data-[on=true]:bg-success data-[on=true]:text-white data-[on=true]:border-success",
+                              },
+                              {
+                                v: "No",
+                                cls: "data-[on=true]:bg-destructive data-[on=true]:text-destructive-foreground data-[on=true]:border-destructive",
+                              },
+                              {
+                                v: "N/A",
+                                cls: "data-[on=true]:bg-muted data-[on=true]:text-foreground data-[on=true]:border-muted-foreground/40",
+                              },
+                            ].map(({ v, cls }) => {
+                              const on = getCompVal(q.id).value === v;
 
-                            {(q.reference?.source_title ||
-                              q.reference?.section ||
-                              q.reference?.page) && (
-                              <div className="text-muted-foreground">
-                                {[
-                                  q.reference?.source_title,
-                                  q.reference?.section,
-                                  q.reference?.page &&
-                                    `Page ${q.reference.page}`,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ")}
-                              </div>
-                            )}
-
-                            {q.reference?.requirement && (
-                              <div>
-                                <span className="font-medium">
-                                  Requirement:{" "}
-                                </span>
-                                {q.reference.requirement}
-                              </div>
-                            )}
-
-                            {q.reference?.source_text && (
-                              <div className="text-xs text-muted-foreground">
-                                {q.reference.source_text}
-                              </div>
-                            )}
-
-                            {(q.expected_evidence?.length ?? 0) > 0 && (
-                              <div>
-                                <div className="font-medium">
-                                  Expected evidence:
-                                </div>
-                                <ul className="list-disc pl-5 text-muted-foreground">
-                                  {q.expected_evidence!.map((item, idx) => (
-                                    <li key={idx}>{item}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
+                              return (
+                                <button
+                                  key={v}
+                                  type="button"
+                                  data-on={on}
+                                  disabled={submitted}
+                                  onClick={() =>
+                                    setCompField(q.id, { value: v })
+                                  }
+                                  className={`px-4 py-2 rounded-md border text-sm transition-colors bg-background hover:bg-accent hover:text-accent-foreground ${cls}`}
+                                >
+                                  {v}
+                                </button>
+                              );
+                            })}
                           </div>
-                        )}
 
-                        {getCompVal(q.id).value === "No" && hasRisk(q) && (
-                          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm space-y-2">
-                            <div className="font-semibold text-destructive">
-                              Finding risk:{" "}
-                              {q.risk?.title ||
-                                "Potential non-compliance risk"}
-                            </div>
-
-                            <div className="flex flex-wrap gap-2 text-xs">
-                              {q.risk?.category && (
-                                <span className="rounded-full border px-2 py-0.5">
-                                  {q.risk.category}
-                                </span>
-                              )}
-
-                              {q.risk?.severity && (
-                                <span className="rounded-full border px-2 py-0.5">
-                                  Severity: {q.risk.severity}
-                                </span>
-                              )}
-
-                              {q.risk?.likelihood && (
-                                <span className="rounded-full border px-2 py-0.5">
-                                  Likelihood: {q.risk.likelihood}
-                                </span>
-                              )}
-
-                              {q.risk?.impact && (
-                                <span className="rounded-full border px-2 py-0.5">
-                                  Impact: {q.risk.impact}
-                                </span>
-                              )}
-                            </div>
-
-                            {q.risk?.description && (
-                              <p className="text-muted-foreground">
-                                {q.risk.description}
-                              </p>
-                            )}
-
-                            {(q.recommended_actions?.length ?? 0) > 0 && (
-                              <div>
-                                <div className="font-medium">
-                                  Recommended actions:
-                                </div>
-                                <ul className="list-disc pl-5 text-muted-foreground">
-                                  {q.recommended_actions!.map((item, idx) => (
-                                    <li key={idx}>{item}</li>
-                                  ))}
-                                </ul>
+                          {hasReference(q) && (
+                            <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-2">
+                              <div className="font-medium">
+                                Normative reference
                               </div>
-                            )}
-                          </div>
-                        )}
 
-                        <Textarea
-                          placeholder="Comment / finding details"
-                          value={getCompVal(q.id).comment ?? ""}
-                          onChange={(e) =>
-                            setCompField(q.id, {
-                              comment: e.target.value,
-                            })
-                          }
-                          disabled={submitted}
-                          maxLength={2000}
-                          rows={2}
-                        />
+                              {(q.reference?.source_title ||
+                                q.reference?.section ||
+                                q.reference?.page) && (
+                                <div className="text-muted-foreground">
+                                  {[
+                                    q.reference?.source_title,
+                                    q.reference?.section,
+                                    q.reference?.page &&
+                                      `Page ${q.reference.page}`,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                </div>
+                              )}
 
-                        <div className="flex items-center gap-3">
-                          <label className="cursor-pointer">
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              disabled={submitted}
-                              onChange={(e) =>
-                                e.target.files?.[0] &&
-                                onUploadFile(q.id, e.target.files[0])
-                              }
-                            />
+                              {q.reference?.requirement && (
+                                <div>
+                                  <span className="font-medium">
+                                    Requirement:{" "}
+                                  </span>
+                                  {q.reference.requirement}
+                                </div>
+                              )}
 
-                            <span className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
-                              <Camera className="h-4 w-4" />
-                              {getCompVal(q.id).evidence?.name
-                                ? "Replace photo evidence"
-                                : "Add photo evidence"}
-                            </span>
-                          </label>
+                              {q.reference?.source_text && (
+                                <div className="text-xs text-muted-foreground">
+                                  {q.reference.source_text}
+                                </div>
+                              )}
 
-                          {getCompVal(q.id).evidence?.name && (
-                            <span className="text-xs text-muted-foreground truncate max-w-xs">
-                              {getCompVal(q.id).evidence!.name}
-                            </span>
+                              {(q.expected_evidence?.length ?? 0) > 0 && (
+                                <div>
+                                  <div className="font-medium">
+                                    Expected evidence:
+                                  </div>
+                                  <ul className="list-disc pl-5 text-muted-foreground">
+                                    {q.expected_evidence!.map((item, idx) => (
+                                      <li key={idx}>{item}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
                           )}
+
+                          {getCompVal(q.id).value === "No" && hasRisk(q) && (
+                            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm space-y-2">
+                              <div className="font-semibold text-destructive">
+                                Finding risk:{" "}
+                                {q.risk?.title ||
+                                  "Potential non-compliance risk"}
+                              </div>
+
+                              <div className="flex flex-wrap gap-2 text-xs">
+                                {q.risk?.category && (
+                                  <span className="rounded-full border px-2 py-0.5">
+                                    {q.risk.category}
+                                  </span>
+                                )}
+
+                                {q.risk?.severity && (
+                                  <span className="rounded-full border px-2 py-0.5">
+                                    Severity: {q.risk.severity}
+                                  </span>
+                                )}
+
+                                {q.risk?.likelihood && (
+                                  <span className="rounded-full border px-2 py-0.5">
+                                    Likelihood: {q.risk.likelihood}
+                                  </span>
+                                )}
+
+                                {q.risk?.impact && (
+                                  <span className="rounded-full border px-2 py-0.5">
+                                    Impact: {q.risk.impact}
+                                  </span>
+                                )}
+                              </div>
+
+                              {q.risk?.description && (
+                                <p className="text-muted-foreground">
+                                  {q.risk.description}
+                                </p>
+                              )}
+
+                              {(q.recommended_actions?.length ?? 0) > 0 && (
+                                <div>
+                                  <div className="font-medium">
+                                    Recommended actions:
+                                  </div>
+                                  <ul className="list-disc pl-5 text-muted-foreground">
+                                    {q.recommended_actions!.map(
+                                      (item, idx) => (
+                                        <li key={idx}>{item}</li>
+                                      )
+                                    )}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          <Textarea
+                            placeholder="Comment / finding details"
+                            value={getCompVal(q.id).comment ?? ""}
+                            onChange={(e) =>
+                              setCompField(q.id, {
+                                comment: e.target.value,
+                              })
+                            }
+                            disabled={submitted}
+                            maxLength={2000}
+                            rows={2}
+                          />
+
+                          <div className="flex items-center gap-3">
+                            <label className="cursor-pointer">
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                disabled={submitted}
+                                onChange={(e) =>
+                                  e.target.files?.[0] &&
+                                  onUploadFile(q.id, e.target.files[0])
+                                }
+                              />
+
+                              <span className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
+                                <Camera className="h-4 w-4" />
+                                {getCompVal(q.id).evidence?.name
+                                  ? "Replace photo evidence"
+                                  : "Add photo evidence"}
+                              </span>
+                            </label>
+
+                            {getCompVal(q.id).evidence?.name && (
+                              <span className="text-xs text-muted-foreground truncate max-w-xs">
+                                {getCompVal(q.id).evidence!.name}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {renderActionButtons("bottom")}
     </div>
