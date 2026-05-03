@@ -13,12 +13,12 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useEffect } from "react";
+import { useEffect, type ComponentType } from "react";
 
 interface NavItem {
   to: string;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   show: boolean;
 }
 
@@ -56,7 +56,7 @@ export function AppLayout() {
     },
     {
       to: "/admin/groups",
-      label: "Audit Groups",
+      label: "Audits",
       icon: FolderKanban,
       show: hasRole("admin") || hasRole("lead_auditor"),
     },
