@@ -13,10 +13,15 @@ import {
   FileImage,
   FileText,
   MessageSquare,
+  Save,
   ShieldAlert,
+  Upload,
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 
 interface AuditReference {
@@ -75,6 +80,7 @@ interface Member {
   answered_questions: number;
   total_questions: number;
   submitted: boolean;
+  response_id: string | null;
   answers: Record<string, ComplianceAnswer>;
 }
 
@@ -86,18 +92,33 @@ interface SurveyProgressRow {
   schema: SurveySchema | null;
 }
 
+type ActionPlanStatus = "pending" | "in_progress" | "closed" | "cancelled";
+
 interface ActionPlanItem {
   id: string;
-  auditorId: string;
-  auditorName: string;
-  auditorEmail: string;
-  sectionTitle: string;
-  questionLabel: string;
-  answer: ComplianceAnswer;
-  reference?: AuditReference;
-  risk?: AuditRisk;
-  recommendedActions: string[];
-  expectedEvidence: string[];
+  survey_id: string;
+  survey_response_id: string | null;
+  auditor_id: string | null;
+  question_id: string;
+  section_title: string;
+  question_label: string;
+  reference: AuditReference;
+  risk: AuditRisk;
+  finding_comment: string | null;
+  recommended_actions: string[];
+  expected_evidence: string[];
+  corrective_action: string | null;
+  responsible_user_id: string | null;
+  responsible_name: string | null;
+  due_date: string | null;
+  status: ActionPlanStatus;
+  closure_comment: string | null;
+  closure_evidence_path: string | null;
+  closure_evidence_name: string | null;
+  created_at: string;
+  updated_at: string;
+  auditor_name?: string;
+  auditor_email?: string;
 }
 
 export const Route = createFileRoute("/_app/surveys/$id/progress")({
@@ -112,7 +133,7 @@ function getQuestionIds(schema: SurveySchema | null | undefined): string[] {
 
   return sections.flatMap((section) =>
     (section.questions ?? [])
-      .map((question) => question.id)
+      .map((question) => String(question.id ?? "").trim())
       .filter(Boolean)
   );
 }
@@ -179,6 +200,33 @@ function answerBadgeClass(value?: string) {
   return "border-border bg-background text-muted-foreground";
 }
 
+function statusLabel(status: ActionPlanStatus) {
+  const map: Record<ActionPlanStatus, string> = {
+    pending: "Pendiente",
+    in_progress: "En progreso",
+    closed: "Cerrado",
+    cancelled: "Cancelado",
+  };
+
+  return map[status];
+}
+
+function statusClass(status: ActionPlanStatus) {
+  if (status === "closed") {
+    return "border-success/30 bg-success/10 text-success";
+  }
+
+  if (status === "in_progress") {
+    return "border-accent/30 bg-accent/10 text-accent-foreground";
+  }
+
+  if (status === "cancelled") {
+    return "border-muted-foreground/30 bg-muted text-muted-foreground";
+  }
+
+  return "border-warning/30 bg-warning/10 text-warning-foreground";
+}
+
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
 
@@ -213,6 +261,16 @@ function fallbackActionsForFinding(question: Question): string[] {
   ];
 }
 
+function normalizeJsonObject<T extends Record<string, unknown>>(
+  value: unknown
+): T {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {} as T;
+  }
+
+  return value as T;
+}
+
 function SurveyProgress() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
@@ -220,11 +278,15 @@ function SurveyProgress() {
 
   const [survey, setSurvey] = useState<SurveyProgressRow | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [actionItems, setActionItems] = useState<ActionPlanItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [exportingId, setExportingId] = useState<string | null>(null);
   const [openingEvidence, setOpeningEvidence] = useState<string | null>(null);
   const [openingPdf, setOpeningPdf] = useState(false);
+  const [savingActionId, setSavingActionId] = useState<string | null>(null);
+  const [uploadingActionEvidenceId, setUploadingActionEvidenceId] =
+    useState<string | null>(null);
 
   const isAdmin = hasRole("admin");
 
@@ -233,36 +295,27 @@ function SurveyProgress() {
     [survey?.schema]
   );
 
-  const actionPlan = useMemo<ActionPlanItem[]>(() => {
-    const items: ActionPlanItem[] = [];
-    const sections = survey?.schema?.sections ?? [];
+  const memberMap = useMemo(() => {
+    const map = new Map<string, Member>();
 
     members.forEach((member) => {
-      sections.forEach((section) => {
-        (section.questions ?? []).forEach((question) => {
-          const answer = member.answers[question.id];
-
-          if (answer?.value !== "No") return;
-
-          items.push({
-            id: `${member.id}-${question.id}`,
-            auditorId: member.id,
-            auditorName: member.full_name || member.email,
-            auditorEmail: member.email,
-            sectionTitle: section.title,
-            questionLabel: question.label || "Untitled question",
-            answer,
-            reference: question.reference,
-            risk: question.risk,
-            recommendedActions: fallbackActionsForFinding(question),
-            expectedEvidence: asStringArray(question.expected_evidence),
-          });
-        });
-      });
+      map.set(member.id, member);
     });
 
-    return items;
-  }, [members, survey?.schema?.sections]);
+    return map;
+  }, [members]);
+
+  const hydratedActionItems = useMemo(() => {
+    return actionItems.map((item) => {
+      const member = item.auditor_id ? memberMap.get(item.auditor_id) : null;
+
+      return {
+        ...item,
+        auditor_name: member?.full_name || member?.email || "Auditor",
+        auditor_email: member?.email || "",
+      };
+    });
+  }, [actionItems, memberMap]);
 
   const stats = useMemo(() => {
     const total = members.length;
@@ -331,10 +384,184 @@ function SurveyProgress() {
       answeredPct,
       findings,
       evidenceCount,
-      actionPlanItems: actionPlan.length,
+      actionPlanItems: actionItems.length,
+      closedActionItems: actionItems.filter((item) => item.status === "closed")
+        .length,
       allDone: total > 0 && submitted === total,
     };
-  }, [members, questionIds, actionPlan.length]);
+  }, [members, questionIds, actionItems]);
+
+  const updateActionItem = (
+    itemId: string,
+    patch: Partial<ActionPlanItem>
+  ) => {
+    setActionItems((current) =>
+      current.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              ...patch,
+            }
+          : item
+      )
+    );
+  };
+
+  const loadActionItems = async () => {
+    const { data, error } = await supabase
+      .from("action_plan_items")
+      .select("*")
+      .eq("survey_id", id)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    setActionItems(
+      ((data ?? []) as any[]).map((item) => ({
+        id: item.id,
+        survey_id: item.survey_id,
+        survey_response_id: item.survey_response_id,
+        auditor_id: item.auditor_id,
+        question_id: item.question_id,
+        section_title: item.section_title ?? "",
+        question_label: item.question_label ?? "",
+        reference: normalizeJsonObject<AuditReference>(item.reference),
+        risk: normalizeJsonObject<AuditRisk>(item.risk),
+        finding_comment: item.finding_comment ?? null,
+        recommended_actions: asStringArray(item.recommended_actions),
+        expected_evidence: asStringArray(item.expected_evidence),
+        corrective_action: item.corrective_action ?? null,
+        responsible_user_id: item.responsible_user_id ?? null,
+        responsible_name: item.responsible_name ?? null,
+        due_date: item.due_date ?? null,
+        status: (item.status ?? "pending") as ActionPlanStatus,
+        closure_comment: item.closure_comment ?? null,
+        closure_evidence_path: item.closure_evidence_path ?? null,
+        closure_evidence_name: item.closure_evidence_name ?? null,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+      }))
+    );
+  };
+
+  const syncActionPlanItems = async (
+    surveyRow: SurveyProgressRow,
+    loadedMembers: Member[]
+  ) => {
+    const sections = surveyRow.schema?.sections ?? [];
+
+    const rowsToUpsert = loadedMembers.flatMap((member) => {
+      return sections.flatMap((section) => {
+        return (section.questions ?? [])
+          .filter((question) => member.answers[question.id]?.value === "No")
+          .map((question) => {
+            const answer = member.answers[question.id];
+
+            return {
+              survey_id: id,
+              survey_response_id: member.response_id,
+              auditor_id: member.id,
+              question_id: question.id,
+              section_title: section.title ?? "",
+              question_label: question.label ?? "Untitled question",
+              reference: question.reference ?? {},
+              risk: question.risk ?? {},
+              finding_comment: answer?.comment ?? null,
+              recommended_actions: fallbackActionsForFinding(question),
+              expected_evidence: asStringArray(question.expected_evidence),
+              created_by: user?.id ?? null,
+            };
+          });
+      });
+    });
+
+    if (rowsToUpsert.length === 0) {
+      await loadActionItems();
+      return;
+    }
+
+    const { error } = await supabase
+      .from("action_plan_items")
+      .upsert(rowsToUpsert, {
+        onConflict: "survey_id,auditor_id,question_id",
+      });
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    await loadActionItems();
+  };
+
+  const saveActionItem = async (item: ActionPlanItem) => {
+    setSavingActionId(item.id);
+
+    try {
+      const { error } = await supabase
+        .from("action_plan_items")
+        .update({
+          corrective_action: item.corrective_action?.trim() || null,
+          responsible_name: item.responsible_name?.trim() || null,
+          responsible_user_id: item.responsible_user_id || null,
+          due_date: item.due_date || null,
+          status: item.status,
+          closure_comment: item.closure_comment?.trim() || null,
+        })
+        .eq("id", item.id);
+
+      if (error) throw error;
+
+      toast.success("Plan de acción guardado");
+      await loadActionItems();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo guardar");
+    } finally {
+      setSavingActionId(null);
+    }
+  };
+
+  const uploadClosureEvidence = async (item: ActionPlanItem, file: File) => {
+    if (file.size > 10 * 1024 * 1024) {
+      return toast.error("File too large (max 10 MB)");
+    }
+
+    setUploadingActionEvidenceId(item.id);
+
+    try {
+      const path = `${id}/${item.id}/${Date.now()}-${file.name}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("action-plan-files")
+        .upload(path, file, {
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { error: updateError } = await supabase
+        .from("action_plan_items")
+        .update({
+          closure_evidence_path: path,
+          closure_evidence_name: file.name,
+        })
+        .eq("id", item.id);
+
+      if (updateError) throw updateError;
+
+      toast.success("Evidencia de cierre cargada");
+      await loadActionItems();
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "No se pudo cargar la evidencia"
+      );
+    } finally {
+      setUploadingActionEvidenceId(null);
+    }
+  };
 
   const exportMember = async (memberId: string) => {
     setExportingId(memberId);
@@ -417,6 +644,34 @@ function SurveyProgress() {
     }
   };
 
+  const openClosureEvidenceFile = async (item: ActionPlanItem) => {
+    if (!item.closure_evidence_path) return;
+
+    setOpeningEvidence(item.closure_evidence_path);
+
+    try {
+      const { data, error } = await supabase.storage
+        .from("action-plan-files")
+        .createSignedUrl(item.closure_evidence_path, 60 * 10);
+
+      if (error) throw error;
+
+      if (data?.signedUrl) {
+        window.open(data.signedUrl, "_blank");
+      } else {
+        toast.error("Could not open closure evidence file");
+      }
+    } catch (e) {
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : "Could not open closure evidence file"
+      );
+    } finally {
+      setOpeningEvidence(null);
+    }
+  };
+
   useEffect(() => {
     if (authLoading || !user) return;
 
@@ -443,6 +698,7 @@ function SurveyProgress() {
         setForbidden(true);
         setSurvey(surveyRow);
         setMembers([]);
+        setActionItems([]);
         setLoading(false);
         return;
       }
@@ -451,6 +707,7 @@ function SurveyProgress() {
 
       if (!surveyRow.assigned_group_id) {
         setMembers([]);
+        setActionItems([]);
         setLoading(false);
         return;
       }
@@ -473,6 +730,7 @@ function SurveyProgress() {
 
       if (memberIds.length === 0) {
         setMembers([]);
+        setActionItems([]);
         setLoading(false);
         return;
       }
@@ -485,7 +743,7 @@ function SurveyProgress() {
             .in("id", memberIds),
           supabase
             .from("survey_responses")
-            .select("user_id,progress,submitted,answers")
+            .select("id,user_id,progress,submitted,answers")
             .eq("survey_id", id),
         ]);
 
@@ -499,6 +757,7 @@ function SurveyProgress() {
         (responses ?? []).map((r) => [
           r.user_id,
           {
+            responseId: r.id,
             storedProgress: Number(r.progress ?? 0),
             submitted: Boolean(r.submitted),
             answers: normalizeAnswers(r.answers),
@@ -506,35 +765,39 @@ function SurveyProgress() {
         ])
       );
 
-      setMembers(
-        (profiles ?? []).map((p) => {
-          const response = respMap.get(p.id);
-          const answers = response?.answers ?? {};
-          const answeredQuestions = countAnsweredQuestions(
-            answers,
-            currentQuestionIds
-          );
+      const loadedMembers: Member[] = (profiles ?? []).map((p) => {
+        const response = respMap.get(p.id);
+        const answers = response?.answers ?? {};
+        const answeredQuestions = countAnsweredQuestions(
+          answers,
+          currentQuestionIds
+        );
 
-          const calculatedProgress =
-            totalQuestions > 0
-              ? Math.round((answeredQuestions / totalQuestions) * 100)
-              : Number(response?.storedProgress ?? 0);
+        const calculatedProgress =
+          totalQuestions > 0
+            ? Math.round((answeredQuestions / totalQuestions) * 100)
+            : Number(response?.storedProgress ?? 0);
 
-          return {
-            id: p.id,
-            email: p.email,
-            full_name: p.full_name,
-            progress: calculatedProgress,
-            answered_questions: answeredQuestions,
-            total_questions: totalQuestions,
-            submitted: Boolean(response?.submitted),
-            answers,
-          };
-        })
-      );
+        return {
+          id: p.id,
+          email: p.email,
+          full_name: p.full_name,
+          progress: calculatedProgress,
+          answered_questions: answeredQuestions,
+          total_questions: totalQuestions,
+          submitted: Boolean(response?.submitted),
+          response_id: response?.responseId ?? null,
+          answers,
+        };
+      });
+
+      setMembers(loadedMembers);
+
+      await syncActionPlanItems(surveyRow, loadedMembers);
 
       setLoading(false);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, user, authLoading, isAdmin]);
 
   if (authLoading || loading) {
@@ -754,24 +1017,24 @@ function SurveyProgress() {
                 <div className="flex items-center gap-2">
                   <ClipboardList className="h-5 w-5 text-muted-foreground" />
                   <h2 className="text-lg font-semibold tracking-tight">
-                    Plan de acción preliminar
+                    Plan de acción
                   </h2>
                 </div>
 
                 <p className="text-sm text-muted-foreground mt-1">
-                  Se genera automáticamente con las respuestas marcadas como{" "}
-                  <span className="font-medium">No</span>. Cada elemento
-                  representa un hallazgo potencial que debe ser revisado,
-                  corregido y cerrado con evidencia.
+                  Se crea automáticamente con las respuestas marcadas como{" "}
+                  <span className="font-medium">No</span>. Aquí puedes completar
+                  responsable, fecha, acción correctiva, estado, comentario de
+                  cierre y evidencia de cierre.
                 </p>
               </div>
 
               <div className="rounded-full border bg-muted/30 px-3 py-1 text-sm text-muted-foreground">
-                {stats.actionPlanItems} acción(es)
+                {stats.closedActionItems} / {stats.actionPlanItems} cerradas
               </div>
             </div>
 
-            {actionPlan.length === 0 ? (
+            {hydratedActionItems.length === 0 ? (
               <div className="rounded-md border border-dashed p-5 text-sm text-muted-foreground">
                 Todavía no hay hallazgos marcados como{" "}
                 <span className="font-medium">No</span>. El plan de acción se
@@ -779,10 +1042,10 @@ function SurveyProgress() {
               </div>
             ) : (
               <div className="space-y-4">
-                {actionPlan.map((item, index) => {
+                {hydratedActionItems.map((item, index) => {
                   const referenceText = buildReferenceText(item.reference);
-                  const hasComment = !!item.answer.comment?.trim();
-                  const hasEvidence = !!item.answer.evidence?.path;
+                  const hasFindingComment = !!item.finding_comment?.trim();
+                  const hasClosureEvidence = !!item.closure_evidence_path;
 
                   return (
                     <div
@@ -801,6 +1064,14 @@ function SurveyProgress() {
                               Hallazgo
                             </span>
 
+                            <span
+                              className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${statusClass(
+                                item.status
+                              )}`}
+                            >
+                              {statusLabel(item.status)}
+                            </span>
+
                             {item.risk?.severity && (
                               <span className="rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">
                                 Severidad: {item.risk.severity}
@@ -815,17 +1086,17 @@ function SurveyProgress() {
                           </div>
 
                           <h3 className="mt-3 font-semibold tracking-tight">
-                            {item.questionLabel}
+                            {item.question_label}
                           </h3>
 
                           <div className="mt-1 text-sm text-muted-foreground">
                             <span className="font-medium">Sección: </span>
-                            {item.sectionTitle}
+                            {item.section_title}
                           </div>
 
                           <div className="text-sm text-muted-foreground">
                             <span className="font-medium">Reportado por: </span>
-                            {item.auditorName}
+                            {item.auditor_name}
                           </div>
 
                           {referenceText && (
@@ -880,7 +1151,7 @@ function SurveyProgress() {
                             </div>
                           )}
 
-                          {hasComment && (
+                          {hasFindingComment && (
                             <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
                               <div className="mb-1 flex items-center gap-1 font-medium">
                                 <MessageSquare className="h-4 w-4" />
@@ -888,7 +1159,7 @@ function SurveyProgress() {
                               </div>
 
                               <p className="text-muted-foreground whitespace-pre-wrap">
-                                {item.answer.comment}
+                                {item.finding_comment}
                               </p>
                             </div>
                           )}
@@ -900,7 +1171,7 @@ function SurveyProgress() {
                               </div>
 
                               <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
-                                {item.recommendedActions.map(
+                                {item.recommended_actions.map(
                                   (action, actionIndex) => (
                                     <li key={actionIndex}>{action}</li>
                                   )
@@ -913,9 +1184,9 @@ function SurveyProgress() {
                                 Evidencia esperada para cierre
                               </div>
 
-                              {item.expectedEvidence.length > 0 ? (
+                              {item.expected_evidence.length > 0 ? (
                                 <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
-                                  {item.expectedEvidence.map(
+                                  {item.expected_evidence.map(
                                     (evidence, evidenceIndex) => (
                                       <li key={evidenceIndex}>{evidence}</li>
                                     )
@@ -931,44 +1202,164 @@ function SurveyProgress() {
                             </div>
                           </div>
 
-                          {hasEvidence && item.answer.evidence && (
-                            <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
-                              <div className="mb-2 flex items-center gap-1 font-medium">
+                          <div className="mt-4 rounded-md border p-4">
+                            <div className="mb-3 font-medium">
+                              Completar plan de acción
+                            </div>
+
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <div className="space-y-1.5 md:col-span-2">
+                                <Label>Acción correctiva</Label>
+                                <Textarea
+                                  value={item.corrective_action ?? ""}
+                                  onChange={(e) =>
+                                    updateActionItem(item.id, {
+                                      corrective_action: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Describe la acción correctiva que se ejecutará para cerrar el hallazgo"
+                                  rows={3}
+                                  maxLength={3000}
+                                />
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <Label>Responsable</Label>
+                                <Input
+                                  value={item.responsible_name ?? ""}
+                                  onChange={(e) =>
+                                    updateActionItem(item.id, {
+                                      responsible_name: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Nombre del responsable"
+                                  maxLength={200}
+                                />
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <Label>Fecha compromiso</Label>
+                                <Input
+                                  type="date"
+                                  value={item.due_date ?? ""}
+                                  onChange={(e) =>
+                                    updateActionItem(item.id, {
+                                      due_date: e.target.value || null,
+                                    })
+                                  }
+                                />
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <Label>Estado</Label>
+                                <select
+                                  className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                  value={item.status}
+                                  onChange={(e) =>
+                                    updateActionItem(item.id, {
+                                      status: e.target
+                                        .value as ActionPlanStatus,
+                                    })
+                                  }
+                                >
+                                  <option value="pending">Pendiente</option>
+                                  <option value="in_progress">
+                                    En progreso
+                                  </option>
+                                  <option value="closed">Cerrado</option>
+                                  <option value="cancelled">Cancelado</option>
+                                </select>
+                              </div>
+
+                              <div className="space-y-1.5 md:col-span-2">
+                                <Label>Comentario de cierre</Label>
+                                <Textarea
+                                  value={item.closure_comment ?? ""}
+                                  onChange={(e) =>
+                                    updateActionItem(item.id, {
+                                      closure_comment: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Describe cómo se corrigió o cerró el hallazgo"
+                                  rows={3}
+                                  maxLength={3000}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="mt-4 rounded-md border bg-muted/30 p-3">
+                              <div className="mb-2 flex items-center gap-1 font-medium text-sm">
                                 <FileImage className="h-4 w-4" />
-                                Evidencia adjunta por el auditor
+                                Evidencia de cierre
                               </div>
 
                               <div className="flex flex-wrap items-center gap-3">
-                                <span className="text-muted-foreground">
-                                  {item.answer.evidence.name ||
-                                    item.answer.evidence.path.split("/").pop()}
-                                </span>
+                                <label className="cursor-pointer">
+                                  <input
+                                    type="file"
+                                    accept="image/*,application/pdf"
+                                    className="hidden"
+                                    onChange={(e) =>
+                                      e.target.files?.[0] &&
+                                      uploadClosureEvidence(
+                                        item,
+                                        e.target.files[0]
+                                      )
+                                    }
+                                  />
 
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() =>
-                                    openEvidenceFile(item.answer.evidence!)
-                                  }
-                                  disabled={
-                                    openingEvidence ===
-                                    item.answer.evidence.path
-                                  }
-                                >
-                                  <Eye className="h-4 w-4 mr-1" />
-                                  {openingEvidence === item.answer.evidence.path
-                                    ? "Opening…"
-                                    : "Open evidence"}
-                                </Button>
+                                  <span className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
+                                    <Upload className="h-4 w-4" />
+                                    {uploadingActionEvidenceId === item.id
+                                      ? "Uploading…"
+                                      : hasClosureEvidence
+                                        ? "Replace evidence"
+                                        : "Upload evidence"}
+                                  </span>
+                                </label>
+
+                                {hasClosureEvidence && (
+                                  <>
+                                    <span className="text-sm text-muted-foreground truncate max-w-xs">
+                                      {item.closure_evidence_name ||
+                                        item.closure_evidence_path
+                                          ?.split("/")
+                                          .pop()}
+                                    </span>
+
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() =>
+                                        openClosureEvidenceFile(item)
+                                      }
+                                      disabled={
+                                        openingEvidence ===
+                                        item.closure_evidence_path
+                                      }
+                                    >
+                                      <Eye className="h-4 w-4 mr-1" />
+                                      {openingEvidence ===
+                                      item.closure_evidence_path
+                                        ? "Opening…"
+                                        : "Open evidence"}
+                                    </Button>
+                                  </>
+                                )}
                               </div>
                             </div>
-                          )}
 
-                          <div className="mt-3 rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-                            Estado sugerido:{" "}
-                            <span className="font-medium">
-                              Pendiente de análisis y asignación de responsable.
-                            </span>
+                            <div className="mt-4 flex justify-end">
+                              <Button
+                                onClick={() => saveActionItem(item)}
+                                disabled={savingActionId === item.id}
+                              >
+                                <Save className="h-4 w-4 mr-2" />
+                                {savingActionId === item.id
+                                  ? "Saving…"
+                                  : "Guardar plan"}
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       </div>
