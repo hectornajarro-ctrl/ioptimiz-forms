@@ -317,7 +317,9 @@ function SurveyEditor() {
     await supabase.from("surveys").update({ pdf_path: path }).eq("id", survey.id);
 
     setUploading(false);
+
     toast.success("PDF uploaded");
+
     await load();
   };
 
@@ -348,6 +350,7 @@ function SurveyEditor() {
         );
 
       toast.success(`Extracted ${questions} question(s)`);
+
       await load();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Extraction failed";
@@ -380,6 +383,7 @@ function SurveyEditor() {
     if (error) return toast.error(error.message);
 
     toast.success("Survey approved & assigned");
+
     await load();
   };
 
@@ -396,6 +400,7 @@ function SurveyEditor() {
     if (error) return toast.error(error.message);
 
     toast.success("Survey reopened as draft");
+
     await load();
   };
 
@@ -405,6 +410,7 @@ function SurveyEditor() {
     if (error) return toast.error(error.message);
 
     toast.success("Draft deleted");
+
     navigate({ to: "/surveys" });
   };
 
@@ -516,19 +522,21 @@ function SurveyEditor() {
 
   return (
     <div className="container mx-auto max-w-6xl py-8">
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <Button variant="ghost" size="sm" asChild>
-          <Link to="/surveys">
-            <ArrowLeft className="h-4 w-4 mr-1" />
-            Back to surveys
-          </Link>
-        </Button>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/surveys">
+              <ArrowLeft className="mr-1 h-4 w-4" />
+              Back to surveys
+            </Link>
+          </Button>
+        </div>
 
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {survey.status === "approved" && (
             <Button variant="outline" asChild>
               <Link to="/surveys/$id/progress" params={{ id: survey.id }}>
-                <BarChart3 className="h-4 w-4 mr-2" />
+                <BarChart3 className="mr-2 h-4 w-4" />
                 View progress
               </Link>
             </Button>
@@ -540,7 +548,7 @@ function SurveyEditor() {
               onClick={exportCombined}
               disabled={exporting}
             >
-              <Download className="h-4 w-4 mr-2" />
+              <Download className="mr-2 h-4 w-4" />
               {exporting ? "Generating…" : "Export report"}
             </Button>
           )}
@@ -552,14 +560,14 @@ function SurveyEditor() {
               </Button>
 
               <Button onClick={approve}>
-                <CheckCircle2 className="h-4 w-4 mr-2" />
+                <CheckCircle2 className="mr-2 h-4 w-4" />
                 Approve & assign
               </Button>
 
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="destructive">
-                    <Trash2 className="h-4 w-4 mr-2" />
+                    <Trash2 className="mr-2 h-4 w-4" />
                     Delete
                   </Button>
                 </AlertDialogTrigger>
@@ -753,10 +761,7 @@ function SurveyEditor() {
               </span>
             )}
 
-            <Button
-              onClick={runExtract}
-              disabled={!survey.pdf_path || extracting}
-            >
+            <Button onClick={runExtract} disabled={!survey.pdf_path || extracting}>
               <Sparkles className="h-4 w-4 mr-2" />
               {extracting ? "Extracting with AI…" : "Extract with AI"}
             </Button>
@@ -798,10 +803,7 @@ function SurveyEditor() {
 
             <div className="space-y-3">
               {sec.questions.map((q, idx) => (
-                <div
-                  key={q.id}
-                  className="rounded-md border bg-background p-3"
-                >
+                <div key={q.id} className="rounded-md border bg-background p-3">
                   <div className="flex items-start gap-2">
                     <span className="text-xs text-muted-foreground mt-2 w-6 shrink-0">
                       {idx + 1}.
@@ -945,110 +947,147 @@ function SurveyEditor() {
                           </p>
 
                           <div className="grid sm:grid-cols-2 gap-2 mt-2">
-                            <Input
-                              value={q.risk?.title ?? ""}
-                              onChange={(e) =>
-                                editQuestion(sec.id, q.id, {
-                                  risk: {
-                                    ...(q.risk ?? {}),
-                                    title: e.target.value,
-                                  },
-                                })
-                              }
-                              disabled={!isDraft}
-                              placeholder="Risk title"
-                              maxLength={200}
-                            />
+                            <div className="space-y-1.5">
+                              <Label className="text-xs text-muted-foreground">
+                                Título del riesgo
+                              </Label>
 
-                            <Input
-                              value={q.risk?.category ?? ""}
-                              onChange={(e) =>
-                                editQuestion(sec.id, q.id, {
-                                  risk: {
-                                    ...(q.risk ?? {}),
-                                    category: e.target.value,
-                                  },
-                                })
-                              }
-                              disabled={!isDraft}
-                              placeholder="Category"
-                              maxLength={100}
-                            />
+                              <Input
+                                value={q.risk?.title ?? ""}
+                                onChange={(e) =>
+                                  editQuestion(sec.id, q.id, {
+                                    risk: {
+                                      ...(q.risk ?? {}),
+                                      title: e.target.value,
+                                    },
+                                  })
+                                }
+                                disabled={!isDraft}
+                                placeholder="Risk title"
+                                maxLength={200}
+                              />
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <Label className="text-xs text-muted-foreground">
+                                Categoría
+                              </Label>
+
+                              <Input
+                                value={q.risk?.category ?? ""}
+                                onChange={(e) =>
+                                  editQuestion(sec.id, q.id, {
+                                    risk: {
+                                      ...(q.risk ?? {}),
+                                      category: e.target.value,
+                                    },
+                                  })
+                                }
+                                disabled={!isDraft}
+                                placeholder="Category"
+                                maxLength={100}
+                              />
+                            </div>
                           </div>
 
                           <div className="grid sm:grid-cols-3 gap-2 mt-2">
-                            <Select
-                              value={q.risk?.severity ?? ""}
-                              onValueChange={(v) =>
-                                editQuestion(sec.id, q.id, {
-                                  risk: {
-                                    ...(q.risk ?? {}),
-                                    severity: v,
-                                  },
-                                })
-                              }
-                              disabled={!isDraft}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Severity" />
-                              </SelectTrigger>
+                            <div className="space-y-1.5">
+                              <Label className="text-xs text-muted-foreground">
+                                Severidad
+                              </Label>
 
-                              <SelectContent>
-                                <SelectItem value="Low">Low</SelectItem>
-                                <SelectItem value="Medium">Medium</SelectItem>
-                                <SelectItem value="High">High</SelectItem>
-                                <SelectItem value="Critical">
-                                  Critical
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
+                              <Select
+                                value={q.risk?.severity ?? ""}
+                                onValueChange={(v) =>
+                                  editQuestion(sec.id, q.id, {
+                                    risk: {
+                                      ...(q.risk ?? {}),
+                                      severity: v,
+                                    },
+                                  })
+                                }
+                                disabled={!isDraft}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Severity" />
+                                </SelectTrigger>
 
-                            <Select
-                              value={q.risk?.likelihood ?? ""}
-                              onValueChange={(v) =>
-                                editQuestion(sec.id, q.id, {
-                                  risk: {
-                                    ...(q.risk ?? {}),
-                                    likelihood: v,
-                                  },
-                                })
-                              }
-                              disabled={!isDraft}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Likelihood" />
-                              </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Low">Low</SelectItem>
+                                  <SelectItem value="Medium">Medium</SelectItem>
+                                  <SelectItem value="High">High</SelectItem>
+                                  <SelectItem value="Critical">
+                                    Critical
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
 
-                              <SelectContent>
-                                <SelectItem value="Low">Low</SelectItem>
-                                <SelectItem value="Medium">Medium</SelectItem>
-                                <SelectItem value="High">High</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <div className="space-y-1.5">
+                              <Label className="text-xs text-muted-foreground">
+                                Probabilidad
+                              </Label>
 
-                            <Select
-                              value={q.risk?.impact ?? ""}
-                              onValueChange={(v) =>
-                                editQuestion(sec.id, q.id, {
-                                  risk: {
-                                    ...(q.risk ?? {}),
-                                    impact: v,
-                                  },
-                                })
-                              }
-                              disabled={!isDraft}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Impact" />
-                              </SelectTrigger>
+                              <Select
+                                value={q.risk?.likelihood ?? ""}
+                                onValueChange={(v) =>
+                                  editQuestion(sec.id, q.id, {
+                                    risk: {
+                                      ...(q.risk ?? {}),
+                                      likelihood: v,
+                                    },
+                                  })
+                                }
+                                disabled={!isDraft}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Likelihood" />
+                                </SelectTrigger>
 
-                              <SelectContent>
-                                <SelectItem value="Low">Low</SelectItem>
-                                <SelectItem value="Medium">Medium</SelectItem>
-                                <SelectItem value="High">High</SelectItem>
-                              </SelectContent>
-                            </Select>
+                                <SelectContent>
+                                  <SelectItem value="Low">Low</SelectItem>
+                                  <SelectItem value="Medium">Medium</SelectItem>
+                                  <SelectItem value="High">High</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <Label className="text-xs text-muted-foreground">
+                                Impacto
+                              </Label>
+
+                              <Select
+                                value={q.risk?.impact ?? ""}
+                                onValueChange={(v) =>
+                                  editQuestion(sec.id, q.id, {
+                                    risk: {
+                                      ...(q.risk ?? {}),
+                                      impact: v,
+                                    },
+                                  })
+                                }
+                                disabled={!isDraft}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Impact" />
+                                </SelectTrigger>
+
+                                <SelectContent>
+                                  <SelectItem value="Low">Low</SelectItem>
+                                  <SelectItem value="Medium">Medium</SelectItem>
+                                  <SelectItem value="High">High</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
+
+                          <p className="text-xs text-muted-foreground mt-2">
+                            Severidad mide qué tan grave sería el hallazgo.
+                            Probabilidad mide qué tan probable es que ocurra.
+                            Impacto mide cuánto afectaría a la empresa,
+                            operación, cumplimiento, seguridad o reputación.
+                          </p>
 
                           <Textarea
                             className="mt-2"
@@ -1091,9 +1130,7 @@ function SurveyEditor() {
                           </div>
 
                           <div>
-                            <Label className="text-xs">
-                              Expected evidence
-                            </Label>
+                            <Label className="text-xs">Expected evidence</Label>
 
                             <Textarea
                               value={(q.expected_evidence ?? []).join("\n")}
