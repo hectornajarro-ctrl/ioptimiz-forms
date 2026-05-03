@@ -211,7 +211,7 @@ function SurveyEditor() {
       return;
     }
 
-    setAudits((auditRows ?? []) as AuditOption[]);
+    setAudits((auditRows ?? []) as unknown as AuditOption[]);
   };
 
   useEffect(() => {
