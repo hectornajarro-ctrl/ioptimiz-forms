@@ -1,23 +1,46 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import {
+  createFileRoute,
+  Link,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Upload,
+  Sparkles,
+  Plus,
+  Trash2,
   ArrowLeft,
+  BarChart3,
   CheckCircle2,
-  Camera,
   Download,
-  ClipboardList,
-  Lightbulb,
-  Eye,
-  FileText,
-  Save,
-  ListFilter,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 type FieldType =
   | "text"
@@ -26,8 +49,6 @@ type FieldType =
   | "multiple_choice"
   | "rating"
   | "file";
-
-type QuestionViewFilter = "all" | "completed" | "pending";
 
 interface AuditReference {
   source_title?: string;
@@ -41,9 +62,9 @@ interface AuditRisk {
   title?: string;
   description?: string;
   category?: string;
-  severity?: string;
-  likelihood?: string;
-  impact?: string;
+  severity?: "Low" | "Medium" | "High" | "Critical" | string;
+  likelihood?: "Low" | "Medium" | "High" | string;
+  impact?: "Low" | "Medium" | "High" | string;
 }
 
 interface Question {
@@ -72,21 +93,57 @@ interface SurveySchema {
   sections: Section[];
 }
 
-interface ComplianceAnswer {
-  value?: string;
-  comment?: string;
-  evidence?: {
-    path: string;
-    name: string;
-  };
+interface SurveyRow {
+  id: string;
+  title: string;
+  description: string | null;
+  status: "draft" | "approved" | "archived";
+  mode: "compliance";
+  pdf_path: string | null;
+  schema: SurveySchema;
+  assigned_group_id: string | null;
+  lead_auditor_id: string;
+  starts_at: string | null;
+  ends_at: string | null;
 }
 
-export const Route = createFileRoute("/_app/assigned/$id")({
-  component: FillSurvey,
+interface AuditOption {
+  id: string;
+  name: string;
+}
+
+export const Route = createFileRoute("/_app/surveys/$id")({
+  component: SurveyEditor,
   head: () => ({
-    meta: [{ title: "Fill audit — AuditFlow" }],
+    meta: [{ title: "Survey editor — AuditFlow" }],
   }),
 });
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function toLocalInput(iso: string | null): string {
+  if (!iso) return "";
+
+  const d = new Date(iso);
+
+  if (isNaN(d.getTime())) return "";
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+    d.getDate()
+  )}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function fromLocalInput(v: string): string | null {
+  if (!v) return null;
+
+  const d = new Date(v);
+
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
 
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -96,538 +153,262 @@ function asStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
-function hasReference(q: Question) {
-  return Boolean(
-    q.reference?.source_title ||
-      q.reference?.section ||
-      q.reference?.page ||
-      q.reference?.requirement ||
-      q.reference?.source_text ||
-      (q.expected_evidence?.length ?? 0) > 0
-  );
-}
-
-function hasRisk(q: Question) {
-  return Boolean(
-    q.risk?.title ||
-      q.risk?.description ||
-      q.risk?.category ||
-      q.risk?.severity ||
-      q.risk?.likelihood ||
-      q.risk?.impact ||
-      (q.recommended_actions?.length ?? 0) > 0
-  );
-}
-
-function hasObjectContent(value: unknown): boolean {
-  return Boolean(
-    value &&
-      typeof value === "object" &&
-      !Array.isArray(value) &&
-      Object.keys(value as Record<string, unknown>).length > 0
-  );
-}
-
-function normalizeAnswers(value: unknown): Record<string, ComplianceAnswer> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-
-  return value as Record<string, ComplianceAnswer>;
-}
-
-function getAnswerValue(
-  answers: Record<string, ComplianceAnswer>,
-  questionId: string
-): string {
-  const answer = answers[questionId];
-  const value = answer?.value;
-
-  if (value === undefined || value === null) return "";
-
-  return String(value).trim();
-}
-
-function getAnswerComment(
-  answers: Record<string, ComplianceAnswer>,
-  questionId: string
-): string {
-  const answer = answers[questionId];
-  const comment = answer?.comment;
-
-  if (comment === undefined || comment === null) return "";
-
-  return String(comment).trim();
-}
-
-function isQuestionCompleted(
-  answers: Record<string, ComplianceAnswer>,
-  questionId: string
-): boolean {
-  const value = getAnswerValue(answers, questionId);
-  const comment = getAnswerComment(answers, questionId);
-
-  return value.length > 0 && comment.length > 0;
-}
-
-function uniqueValues(values: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-
-  values.forEach((value) => {
-    const clean = String(value ?? "").trim();
-
-    if (!clean) return;
-
-    const key = clean.toLowerCase();
-
-    if (!seen.has(key)) {
-      seen.add(key);
-      result.push(clean);
-    }
-  });
-
-  return result;
-}
-
-function FillSurvey() {
+function SurveyEditor() {
   const { id } = Route.useParams();
-  const { user } = useAuth();
+  const { user, session, hasRole } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const [survey, setSurvey] = useState<{
-    title: string;
-    description: string | null;
-    schema: SurveySchema;
-    mode: "compliance";
-    pdf_path: string | null;
-    starts_at: string | null;
-    ends_at: string | null;
-  } | null>(null);
-
-  const [responseId, setResponseId] = useState<string | null>(null);
-  const [answers, setAnswers] = useState<Record<string, ComplianceAnswer>>({});
-  const [submitted, setSubmitted] = useState(false);
+  const [survey, setSurvey] = useState<SurveyRow | null>(null);
+  const [audits, setAudits] = useState<AuditOption[]>([]);
+  const [extracting, setExtracting] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [openingPdf, setOpeningPdf] = useState(false);
-  const [questionFilter, setQuestionFilter] =
-    useState<QuestionViewFilter>("all");
-  const [completedValueFilter, setCompletedValueFilter] = useState("all");
-  const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
 
-  const allQuestions = useMemo(
-    () => survey?.schema.sections.flatMap((s) => s.questions) ?? [],
-    [survey]
-  );
+  const load = async () => {
+    const { data, error } = await supabase
+      .from("surveys")
+      .select(
+        "id,title,description,status,mode,pdf_path,schema,assigned_group_id,lead_auditor_id,starts_at,ends_at"
+      )
+      .eq("id", id)
+      .single();
 
-  const completedCount = useMemo(() => {
-    return allQuestions.filter((q) => isQuestionCompleted(answers, q.id))
-      .length;
-  }, [allQuestions, answers]);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
 
-  const pendingCount = useMemo(() => {
-    return allQuestions.length - completedCount;
-  }, [allQuestions.length, completedCount]);
+    const sch = (data.schema as any) ?? { sections: [] };
 
-  const progress = useMemo(() => {
-    if (allQuestions.length === 0) return 0;
+    setSurvey({
+      ...data,
+      mode: "compliance",
+      schema: {
+        summary: String(sch.summary ?? ""),
+        auditor_objective: String(sch.auditor_objective ?? ""),
+        auditor_actions: asStringArray(sch.auditor_actions),
+        sections: sch.sections ?? [],
+      },
+      starts_at: (data as any).starts_at ?? null,
+      ends_at: (data as any).ends_at ?? null,
+    } as SurveyRow);
 
-    return Math.round((completedCount / allQuestions.length) * 100);
-  }, [allQuestions.length, completedCount]);
-
-  const canSubmit =
-    allQuestions.length > 0 && completedCount === allQuestions.length;
-
-  const completedFilterValues = useMemo(() => {
-    const baseValues = ["Yes", "No", "N/A"];
-
-    const optionValues = allQuestions.flatMap((question) =>
-      asStringArray(question.options)
-    );
-
-    const answerValues = allQuestions
-      .filter((question) => isQuestionCompleted(answers, question.id))
-      .map((question) => getAnswerValue(answers, question.id))
-      .filter(Boolean);
-
-    return uniqueValues([...baseValues, ...optionValues, ...answerValues]);
-  }, [allQuestions, answers]);
-
-  const filteredSections = useMemo(() => {
-    if (!survey) return [];
-
-    return survey.schema.sections
-      .map((section) => {
-        const filteredQuestions = section.questions.filter((question) => {
-          const answerValue = getAnswerValue(answers, question.id);
-          const completed = isQuestionCompleted(answers, question.id);
-
-          if (question.id === activeQuestionId) {
-            return true;
-          }
-
-          if (questionFilter === "pending") {
-            return !completed;
-          }
-
-          if (questionFilter === "completed") {
-            if (!completed) return false;
-
-            if (completedValueFilter === "all") return true;
-
-            return answerValue === completedValueFilter;
-          }
-
-          return true;
-        });
-
-        return {
-          ...section,
-          questions: filteredQuestions,
-        };
-      })
-      .filter((section) => section.questions.length > 0);
-  }, [survey, answers, questionFilter, completedValueFilter, activeQuestionId]);
-
-  const visibleQuestionCount = useMemo(() => {
-    return filteredSections.reduce(
-      (total, section) => total + section.questions.length,
-      0
-    );
-  }, [filteredSections]);
-
-  useEffect(() => {
-    if (!user) return;
-
-    (async () => {
-      const { data: s } = await supabase
-        .from("surveys")
-        .select(
-          "title,description,schema,mode,pdf_path,assigned_group_id,starts_at,ends_at"
-        )
-        .eq("id", id)
-        .single();
-
-      if (!s) return;
-
-      const sch = (s.schema as any) ?? { sections: [] };
-
-      setSurvey({
-        title: s.title,
-        description: s.description,
-        schema: {
-          summary: String(sch.summary ?? ""),
-          auditor_objective: String(sch.auditor_objective ?? ""),
-          auditor_actions: asStringArray(sch.auditor_actions),
-          sections: sch.sections ?? [],
-        },
-        mode: "compliance",
-        pdf_path: (s as any).pdf_path ?? null,
-        starts_at: (s as any).starts_at ?? null,
-        ends_at: (s as any).ends_at ?? null,
-      });
-
-      const now = Date.now();
-      const startsAt = (s as any).starts_at as string | null;
-      const endsAt = (s as any).ends_at as string | null;
-
-      const notYetOpen = !!startsAt && new Date(startsAt).getTime() > now;
-      const closed = !!endsAt && new Date(endsAt).getTime() < now;
-
-      const { data: existing } = await supabase
-        .from("survey_responses")
-        .select("id,answers,draft_answers,submitted")
-        .eq("survey_id", id)
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (existing) {
-        const publicAnswers = normalizeAnswers((existing as any).answers);
-        const draftAnswers = normalizeAnswers((existing as any).draft_answers);
-
-        setResponseId(existing.id);
-
-        if (existing.submitted) {
-          setAnswers(publicAnswers);
-        } else if (hasObjectContent(draftAnswers)) {
-          setAnswers(draftAnswers);
-        } else {
-          setAnswers(publicAnswers);
-        }
-
-        setSubmitted(existing.submitted);
-
-        if (closed && !existing.submitted) {
-          toast.error(
-            "This audit has closed. You can no longer submit answers."
-          );
-        }
-
-        return;
-      }
-
-      if (notYetOpen) {
-        toast.error(
-          `This audit opens on ${new Date(startsAt!).toLocaleString()}`
-        );
-        navigate({ to: "/assigned" });
-        return;
-      }
-
-      if (closed) {
-        toast.error("This audit has closed.");
-        navigate({ to: "/assigned" });
-        return;
-      }
-
-      const auditId = (s as any).assigned_group_id as string | null;
-
-      if (auditId) {
-        const { data: audit } = await supabase
+    const auditQuery = hasRole("admin")
+      ? supabase.from("audits" as any).select("id,name").order("name")
+      : supabase
           .from("audits" as any)
-          .select("open_enrollment")
-          .eq("id", auditId)
-          .maybeSingle();
+          .select("id,name")
+          .eq("lead_auditor_id", data.lead_auditor_id)
+          .order("name");
 
-        const { data: existingMembers } = await supabase
-          .from("audits_members" as any)
-          .select("user_id")
-          .eq("group_id", auditId);
+    const { data: auditRows, error: auditError } = await auditQuery;
 
-        const isMember = !!(existingMembers ?? []).some(
-          (m: any) => m.user_id === user.id
-        );
+    if (auditError) {
+      toast.error(auditError.message);
+      setAudits([]);
+      return;
+    }
 
-        const isUnclaimed = (existingMembers?.length ?? 0) === 0;
-
-        if (!isMember && (audit as any)?.open_enrollment && isUnclaimed) {
-          const { error: claimErr } = await supabase
-            .from("audits_members" as any)
-            .insert({
-              group_id: auditId,
-              user_id: user.id,
-            });
-
-          if (claimErr) {
-            toast.error("Someone else just claimed this audit");
-            navigate({ to: "/assigned" });
-            return;
-          }
-
-          toast.success("You claimed this audit");
-        } else if (!isMember && (audit as any)?.open_enrollment && !isUnclaimed) {
-          toast.error("This audit has already been claimed by another member");
-          navigate({ to: "/assigned" });
-          return;
-        }
-      }
-
-      const { data: created, error } = await supabase
-        .from("survey_responses")
-        .insert({
-          survey_id: id,
-          user_id: user.id,
-          answers: {},
-          draft_answers: {},
-          progress: 0,
-          draft_progress: 0,
-        } as any)
-        .select("id")
-        .single();
-
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
-
-      setResponseId(created.id);
-    })();
-  }, [id, user, navigate]);
+    setAudits((auditRows ?? []) as AuditOption[]);
+  };
 
   useEffect(() => {
-    if (questionFilter !== "completed") {
-      setCompletedValueFilter("all");
-    }
-  }, [questionFilter]);
+    if (user) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, user]);
 
-  useEffect(() => {
-    if (
-      completedValueFilter !== "all" &&
-      !completedFilterValues.includes(completedValueFilter)
-    ) {
-      setCompletedValueFilter("all");
-    }
-  }, [completedValueFilter, completedFilterValues]);
+  if (location.pathname.endsWith("/progress")) {
+    return <Outlet />;
+  }
 
-  const getCompVal = (qid: string) => answers[qid] ?? {};
+  if (!survey) {
+    return <div className="p-6 text-muted-foreground">Loading…</div>;
+  }
 
-  const setCompField = (qid: string, patch: Partial<ComplianceAnswer>) => {
-    const cur = getCompVal(qid);
+  const isOwner = user?.id === survey.lead_auditor_id || hasRole("admin");
+  const isDraft = survey.status === "draft";
 
-    setAnswers({
-      ...answers,
-      [qid]: {
-        ...cur,
-        ...patch,
-      },
+  const updateField = (patch: Partial<SurveyRow>) =>
+    setSurvey({
+      ...survey,
+      ...patch,
     });
-  };
 
-  const openSourcePdf = async () => {
-    if (!survey?.pdf_path) return toast.error("No PDF uploaded");
-
-    setOpeningPdf(true);
-
-    try {
-      const { data, error } = await supabase.storage
-        .from("survey-pdfs")
-        .createSignedUrl(survey.pdf_path, 60 * 10);
-
-      if (error) throw error;
-
-      if (!data?.signedUrl) {
-        throw new Error("Could not create PDF link");
-      }
-
-      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not open PDF");
-    } finally {
-      setOpeningPdf(false);
-    }
-  };
-
-  const onUploadFile = async (qid: string, file: File) => {
-    if (!user) return;
-
-    if (file.size > 10 * 1024 * 1024) {
-      return toast.error("File too large (max 10 MB)");
-    }
-
-    const path = `${user.id}/${id}/${qid}-${Date.now()}-${file.name}`;
-
-    const { error } = await supabase.storage
-      .from("response-files")
-      .upload(path, file, {
-        upsert: false,
-      });
-
-    if (error) return toast.error(error.message);
-
-    setCompField(qid, {
-      evidence: {
-        path,
-        name: file.name,
+  const updateSchema = (schemaPatch: Partial<SurveySchema>) =>
+    setSurvey({
+      ...survey,
+      schema: {
+        ...survey.schema,
+        ...schemaPatch,
       },
     });
 
-    toast.success("File attached");
-  };
+  const updateSections = (sections: Section[]) =>
+    updateSchema({
+      sections,
+    });
 
-  const persist = async (
-    opts: {
-      draft?: boolean;
-      submit?: boolean;
-    } = {}
-  ) => {
-    if (!responseId) return;
-
+  const persist = async () => {
     if (
-      survey?.ends_at &&
-      new Date(survey.ends_at).getTime() < Date.now() &&
-      !submitted
+      survey.starts_at &&
+      survey.ends_at &&
+      new Date(survey.ends_at) <= new Date(survey.starts_at)
     ) {
-      return toast.error("This audit has closed and can no longer be modified.");
+      return toast.error("End date must be after start date");
     }
 
     setSaving(true);
 
-    if (opts.submit) {
-      if (allQuestions.length === 0) {
-        setSaving(false);
-        return toast.error("This audit has no questions to submit.");
-      }
-
-      const missing = allQuestions.filter(
-        (q) => !isQuestionCompleted(answers, q.id)
-      );
-
-      if (missing.length) {
-        setSaving(false);
-        return toast.error(
-          `No puedes enviar todavía. Faltan ${missing.length} pregunta(s) por completar con respuesta y comentario.`
-        );
-      }
-
-      const payload = {
-        answers,
-        draft_answers: answers,
-        progress: 100,
-        draft_progress: 100,
-        submitted: true,
-        submitted_at: new Date().toISOString(),
-        progress_saved_at: new Date().toISOString(),
-        draft_saved_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabase
-        .from("survey_responses")
-        .update(payload as any)
-        .eq("id", responseId);
-
-      setSaving(false);
-
-      if (error) return toast.error(error.message);
-
-      setSubmitted(true);
-      setQuestionFilter("all");
-      setCompletedValueFilter("all");
-      setActiveQuestionId(null);
-      toast.success("Submitted ✓");
-      return;
-    }
-
-    if (opts.draft) {
-      const payload = {
-        draft_answers: answers,
-        draft_progress: progress,
-        draft_saved_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabase
-        .from("survey_responses")
-        .update(payload as any)
-        .eq("id", responseId);
-
-      setSaving(false);
-
-      if (error) return toast.error(error.message);
-
-      toast.success("Draft saved. Only you can continue from this draft.");
-      return;
-    }
-
-    const payload = {
-      answers,
-      draft_answers: answers,
-      progress,
-      draft_progress: progress,
-      progress_saved_at: new Date().toISOString(),
-      draft_saved_at: new Date().toISOString(),
-    };
-
     const { error } = await supabase
-      .from("survey_responses")
-      .update(payload as any)
-      .eq("id", responseId);
+      .from("surveys")
+      .update({
+        title: survey.title,
+        description: survey.description,
+        mode: "compliance",
+        schema: survey.schema as any,
+        assigned_group_id: survey.assigned_group_id,
+        starts_at: survey.starts_at,
+        ends_at: survey.ends_at,
+      })
+      .eq("id", survey.id);
 
     setSaving(false);
 
-    if (error) return toast.error(error.message);
+    if (error) {
+      if ((error as { code?: string }).code === "23505") {
+        return toast.error("Another survey of yours already uses this title");
+      }
 
-    toast.success("Progress saved. Your leader can now see this progress.");
+      return toast.error(error.message);
+    }
+
+    toast.success("Saved");
   };
 
-  const exportReport = async () => {
+  const onUpload = async (file: File) => {
+    if (!user) return;
+
+    if (file.type !== "application/pdf") {
+      return toast.error("Please upload a PDF file");
+    }
+
+    if (file.size > 15 * 1024 * 1024) {
+      return toast.error("File too large (max 15 MB)");
+    }
+
+    setUploading(true);
+
+    const path = `${user.id}/${survey.id}/${Date.now()}-${file.name}`;
+
+    const { error } = await supabase.storage
+      .from("survey-pdfs")
+      .upload(path, file, {
+        upsert: false,
+        contentType: "application/pdf",
+      });
+
+    if (error) {
+      setUploading(false);
+      return toast.error(error.message);
+    }
+
+    await supabase.from("surveys").update({ pdf_path: path }).eq("id", survey.id);
+
+    setUploading(false);
+    toast.success("PDF uploaded");
+    await load();
+  };
+
+  const runExtract = async () => {
+    if (!survey.pdf_path) return toast.error("Upload a PDF first");
+    if (!session) return;
+
+    setExtracting(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        "extract-survey",
+        {
+          body: {
+            surveyId: survey.id,
+          },
+        }
+      );
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      const questions =
+        Number(data?.questions ?? data?.questionCount ?? data?.count ?? 0) ||
+        survey.schema.sections.reduce(
+          (sum, section) => sum + section.questions.length,
+          0
+        );
+
+      toast.success(`Extracted ${questions} question(s)`);
+      await load();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Extraction failed";
+      toast.error(msg);
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const approve = async () => {
+    if (!survey.assigned_group_id) {
+      return toast.error("Assign an audit first");
+    }
+
+    if (survey.schema.sections.length === 0) {
+      return toast.error("Add at least one question");
+    }
+
+    await persist();
+
+    const { error } = await supabase
+      .from("surveys")
+      .update({
+        status: "approved",
+        approved_at: new Date().toISOString(),
+        mode: "compliance",
+      })
+      .eq("id", survey.id);
+
+    if (error) return toast.error(error.message);
+
+    toast.success("Survey approved & assigned");
+    await load();
+  };
+
+  const reopen = async () => {
+    const { error } = await supabase
+      .from("surveys")
+      .update({
+        status: "draft",
+        approved_at: null,
+        mode: "compliance",
+      })
+      .eq("id", survey.id);
+
+    if (error) return toast.error(error.message);
+
+    toast.success("Survey reopened as draft");
+    await load();
+  };
+
+  const deleteSurvey = async () => {
+    const { error } = await supabase.from("surveys").delete().eq("id", survey.id);
+
+    if (error) return toast.error(error.message);
+
+    toast.success("Draft deleted");
+    navigate({ to: "/surveys" });
+  };
+
+  const exportCombined = async () => {
     setExporting(true);
 
     try {
@@ -635,8 +416,7 @@ function FillSurvey() {
         "export-survey-pdf",
         {
           body: {
-            surveyId: id,
-            userId: user?.id,
+            surveyId: survey.id,
           },
         }
       );
@@ -646,8 +426,6 @@ function FillSurvey() {
 
       if (data?.url) {
         window.open(data.url, "_blank");
-      } else {
-        toast.error("Export failed");
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Export failed");
@@ -656,158 +434,162 @@ function FillSurvey() {
     }
   };
 
-  const renderActionButtons = (position: "top" | "bottom") => {
-    if (submitted) return null;
+  const addSection = () =>
+    updateSections([
+      ...survey.schema.sections,
+      {
+        id: uid(),
+        title: "New section",
+        questions: [],
+      },
+    ]);
 
-    return (
-      <div
-        className={`flex flex-wrap items-center justify-end gap-3 ${
-          position === "top" ? "mb-6" : "mt-6"
-        }`}
-      >
-        <Button
-          variant="outline"
-          onClick={() => persist({ draft: true })}
-          disabled={saving}
-        >
-          <FileText className="h-4 w-4 mr-2" />
-          {saving ? "Saving…" : "Save draft"}
-        </Button>
+  const removeSection = (sid: string) =>
+    updateSections(survey.schema.sections.filter((s) => s.id !== sid));
 
-        <Button variant="outline" onClick={() => persist()} disabled={saving}>
-          <Save className="h-4 w-4 mr-2" />
-          {saving ? "Saving…" : "Save progress"}
-        </Button>
-
-        <Button
-          onClick={() => persist({ submit: true })}
-          disabled={saving || !canSubmit}
-          title={
-            canSubmit
-              ? "Submit audit"
-              : "Completa todas las preguntas con respuesta y comentario para enviar"
-          }
-        >
-          <CheckCircle2 className="h-4 w-4 mr-2" />
-          {saving ? "Saving…" : "Submit audit"}
-        </Button>
-
-        {!canSubmit && allQuestions.length > 0 && (
-          <div className="w-full text-right text-xs text-muted-foreground">
-            Para enviar, completa todas las preguntas con respuesta y comentario.
-            Faltan {pendingCount}.
-          </div>
-        )}
-      </div>
+  const editSection = (sid: string, patch: Partial<Section>) =>
+    updateSections(
+      survey.schema.sections.map((s) =>
+        s.id === sid
+          ? {
+              ...s,
+              ...patch,
+            }
+          : s
+      )
     );
+
+  const addQuestion = (sid: string) => {
+    const section = survey.schema.sections.find((s) => s.id === sid);
+
+    if (!section) return;
+
+    editSection(sid, {
+      questions: [
+        ...section.questions,
+        {
+          id: uid(),
+          label: "New question",
+          type: "yes_no",
+          required: true,
+          options: [],
+          scale_max: 5,
+          reference: {},
+          risk: {},
+          recommended_actions: [],
+          expected_evidence: [],
+        },
+      ],
+    });
   };
 
-  const renderQuestionFilters = () => (
-    <div
-      className="rounded-lg border bg-card p-4 mb-6"
-      style={{ boxShadow: "var(--shadow-card)" }}
-    >
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2 text-sm font-medium mr-auto">
-          <ListFilter className="h-4 w-4 text-muted-foreground" />
-          Filtro de preguntas
-        </div>
+  const editQuestion = (
+    sid: string,
+    qid: string,
+    patch: Partial<Question>
+  ) => {
+    const section = survey.schema.sections.find((s) => s.id === sid);
 
-        <Button
-          type="button"
-          variant={questionFilter === "all" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setQuestionFilter("all")}
-        >
-          Ver todo
-          <span className="ml-2 rounded-full bg-background/20 px-2 text-xs">
-            {allQuestions.length}
-          </span>
-        </Button>
+    if (!section) return;
 
-        <Button
-          type="button"
-          variant={questionFilter === "pending" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setQuestionFilter("pending")}
-        >
-          Ver pendiente
-          <span className="ml-2 rounded-full bg-background/20 px-2 text-xs">
-            {pendingCount}
-          </span>
-        </Button>
+    editSection(sid, {
+      questions: section.questions.map((q) =>
+        q.id === qid
+          ? {
+              ...q,
+              ...patch,
+            }
+          : q
+      ),
+    });
+  };
 
-        <Button
-          type="button"
-          variant={questionFilter === "completed" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setQuestionFilter("completed")}
-        >
-          Ver completado
-          <span className="ml-2 rounded-full bg-background/20 px-2 text-xs">
-            {completedCount}
-          </span>
-        </Button>
+  const removeQuestion = (sid: string, qid: string) => {
+    const section = survey.schema.sections.find((s) => s.id === sid);
 
-        {questionFilter === "completed" && (
-          <div className="flex items-center gap-2">
-            <Label className="text-xs text-muted-foreground">Respuesta</Label>
+    if (!section) return;
 
-            <select
-              className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
-              value={completedValueFilter}
-              onChange={(e) => setCompletedValueFilter(e.target.value)}
-            >
-              <option value="all">Todo</option>
-
-              {completedFilterValues.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-3 text-xs text-muted-foreground">
-        Mostrando {visibleQuestionCount} de {allQuestions.length} pregunta(s).
-        Para considerarse completada, cada pregunta debe tener respuesta y
-        comentario. Progreso actual:{" "}
-        <span className="font-medium">{completedCount}</span> completada(s),{" "}
-        <span className="font-medium">{pendingCount}</span> pendiente(s).
-        {questionFilter === "completed" && completedValueFilter !== "all" && (
-          <>
-            {" "}
-            Filtro aplicado:{" "}
-            <span className="font-medium">{completedValueFilter}</span>.
-          </>
-        )}
-      </div>
-    </div>
-  );
-
-  if (!survey) {
-    return <div className="p-6 text-muted-foreground">Loading…</div>;
-  }
-
-  const hasAuditContext =
-    !!survey.schema.summary ||
-    !!survey.schema.auditor_objective ||
-    (survey.schema.auditor_actions?.length ?? 0) > 0;
+    editSection(sid, {
+      questions: section.questions.filter((q) => q.id !== qid),
+    });
+  };
 
   return (
-    <div className="container mx-auto max-w-5xl py-8">
+    <div className="container mx-auto max-w-6xl py-8">
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/assigned">
+          <Link to="/surveys">
             <ArrowLeft className="h-4 w-4 mr-1" />
-            Back to assigned audits
+            Back to surveys
           </Link>
         </Button>
 
-        <div className="ml-auto text-sm text-muted-foreground">
-          {submitted ? "Submitted" : `${progress}% complete`}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {survey.status === "approved" && (
+            <Button variant="outline" asChild>
+              <Link to="/surveys/$id/progress" params={{ id: survey.id }}>
+                <BarChart3 className="h-4 w-4 mr-2" />
+                View progress
+              </Link>
+            </Button>
+          )}
+
+          {survey.status === "approved" && isOwner && (
+            <Button
+              variant="outline"
+              onClick={exportCombined}
+              disabled={exporting}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              {exporting ? "Generating…" : "Export report"}
+            </Button>
+          )}
+
+          {isDraft && isOwner && (
+            <>
+              <Button variant="outline" onClick={persist} disabled={saving}>
+                {saving ? "Saving…" : "Save draft"}
+              </Button>
+
+              <Button onClick={approve}>
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                Approve & assign
+              </Button>
+
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive">
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </Button>
+                </AlertDialogTrigger>
+
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete this draft?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      "{survey.title}" will be permanently deleted. This cannot
+                      be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+
+                    <AlertDialogAction onClick={deleteSurvey}>
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
+          )}
+
+          {!isDraft && isOwner && (
+            <Button variant="outline" onClick={reopen}>
+              Reopen as draft
+            </Button>
+          )}
         </div>
       </div>
 
@@ -815,372 +597,553 @@ function FillSurvey() {
         className="rounded-lg border bg-card p-6 mb-6"
         style={{ boxShadow: "var(--shadow-card)" }}
       >
-        <div className="flex flex-wrap items-start gap-4">
-          <div className="flex-1 min-w-64">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {survey.title}
-            </h1>
-
-            {survey.description && (
-              <p className="text-muted-foreground mt-2">{survey.description}</p>
-            )}
+        <div className="grid gap-4">
+          <div className="space-y-1.5">
+            <Label>Title</Label>
+            <Input
+              value={survey.title}
+              onChange={(e) =>
+                updateField({
+                  title: e.target.value,
+                })
+              }
+              disabled={!isDraft}
+              maxLength={200}
+            />
           </div>
 
-          {submitted && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={exportReport}
-              disabled={exporting}
+          <div className="space-y-1.5">
+            <Label>Description</Label>
+            <Textarea
+              value={survey.description ?? ""}
+              onChange={(e) =>
+                updateField({
+                  description: e.target.value,
+                })
+              }
+              disabled={!isDraft}
+              maxLength={500}
+            />
+          </div>
+
+          <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+            This survey is configured as a compliance audit. AI extraction will
+            generate Yes / No / N/A questions with normative references, risks,
+            recommended actions and expected evidence.
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Assign to audit</Label>
+
+            <Select
+              value={survey.assigned_group_id ?? ""}
+              onValueChange={(v) =>
+                updateField({
+                  assigned_group_id: v || null,
+                })
+              }
+              disabled={!isDraft}
             >
-              <Download className="h-4 w-4 mr-1" />
-              {exporting ? "Generating…" : "Export report (PDF)"}
-            </Button>
-          )}
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={
+                    audits.length
+                      ? "Select an audit"
+                      : "You don't lead any audits yet"
+                  }
+                />
+              </SelectTrigger>
+
+              <SelectContent>
+                {audits.map((audit) => (
+                  <SelectItem key={audit.id} value={audit.id}>
+                    {audit.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label>
+                Available from{" "}
+                <span className="text-xs text-muted-foreground font-normal">
+                  optional
+                </span>
+              </Label>
+
+              <Input
+                type="datetime-local"
+                value={toLocalInput(survey.starts_at)}
+                onChange={(e) =>
+                  updateField({
+                    starts_at: fromLocalInput(e.target.value),
+                  })
+                }
+                disabled={!isDraft}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>
+                Available until{" "}
+                <span className="text-xs text-muted-foreground font-normal">
+                  optional
+                </span>
+              </Label>
+
+              <Input
+                type="datetime-local"
+                value={toLocalInput(survey.ends_at)}
+                onChange={(e) =>
+                  updateField({
+                    ends_at: fromLocalInput(e.target.value),
+                  })
+                }
+                disabled={!isDraft}
+              />
+            </div>
+
+            <p className="text-xs text-muted-foreground sm:col-span-2 -mt-1">
+              Members can only fill out this survey within this window. Leave
+              empty for no time limit.
+            </p>
+          </div>
         </div>
-
-        {!submitted && (
-          <div className="mt-4 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
-            <span className="font-medium">Save draft</span> keeps the answers
-            only as your working draft.{" "}
-            <span className="font-medium">Save progress</span> publishes your
-            current progress so your Leader/Admin can see it.
-          </div>
-        )}
-
-        {submitted && (
-          <div className="mt-4 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
-            You've submitted this audit. Answers below are read-only.
-          </div>
-        )}
       </div>
 
-      {renderActionButtons("top")}
-
-      {survey.pdf_path && (
+      {isDraft && (
         <div
-          className="rounded-lg border bg-card p-5 mb-6"
+          className="rounded-lg border bg-card p-6 mb-6"
           style={{ boxShadow: "var(--shadow-card)" }}
         >
-          <div className="flex flex-wrap items-center gap-3">
-            <FileText className="h-5 w-5 text-muted-foreground" />
+          <h2 className="font-semibold tracking-tight mb-1">Source PDF</h2>
 
-            <div className="flex-1 min-w-64">
-              <div className="font-semibold tracking-tight">Source PDF</div>
-              <div className="text-sm text-muted-foreground truncate">
+          <p className="text-sm text-muted-foreground mb-4">
+            Upload a PDF checklist, regulation, standard or policy. AI will
+            generate audit questions, normative references, risks, recommended
+            actions and expected evidence.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="cursor-pointer">
+              <input
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={(e) =>
+                  e.target.files?.[0] && onUpload(e.target.files[0])
+                }
+              />
+
+              <span className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
+                <Upload className="h-4 w-4" />
+                {uploading
+                  ? "Uploading…"
+                  : survey.pdf_path
+                    ? "Replace PDF"
+                    : "Upload PDF"}
+              </span>
+            </label>
+
+            {survey.pdf_path && (
+              <span className="text-xs text-muted-foreground truncate max-w-xs">
                 {survey.pdf_path.split("/").pop()}
-              </div>
-            </div>
+              </span>
+            )}
 
             <Button
-              variant="outline"
-              onClick={openSourcePdf}
-              disabled={openingPdf}
+              onClick={runExtract}
+              disabled={!survey.pdf_path || extracting}
             >
-              <Eye className="h-4 w-4 mr-2" />
-              {openingPdf ? "Opening…" : "View PDF"}
+              <Sparkles className="h-4 w-4 mr-2" />
+              {extracting ? "Extracting with AI…" : "Extract with AI"}
             </Button>
           </div>
         </div>
       )}
 
-      {hasAuditContext && (
-        <div className="grid md:grid-cols-2 gap-4 mb-6">
+      <div className="space-y-5">
+        {survey.schema.sections.map((sec) => (
           <div
+            key={sec.id}
             className="rounded-lg border bg-card p-5"
             style={{ boxShadow: "var(--shadow-card)" }}
           >
-            <div className="mb-3 flex items-center gap-2">
-              <ClipboardList className="h-5 w-5 text-muted-foreground" />
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Resumen y objetivo de la auditoría
-              </p>
+            <div className="flex items-start gap-3 mb-4">
+              <Input
+                value={sec.title}
+                onChange={(e) =>
+                  editSection(sec.id, {
+                    title: e.target.value,
+                  })
+                }
+                disabled={!isDraft}
+                className="font-semibold text-base"
+                maxLength={200}
+              />
+
+              {isDraft && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removeSection(sec.id)}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
             </div>
 
-            {survey.schema.summary && (
-              <p className="text-sm text-muted-foreground mb-3">
-                {survey.schema.summary}
-              </p>
-            )}
+            <div className="space-y-3">
+              {sec.questions.map((q, idx) => (
+                <div
+                  key={q.id}
+                  className="rounded-md border bg-background p-3"
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="text-xs text-muted-foreground mt-2 w-6 shrink-0">
+                      {idx + 1}.
+                    </span>
 
-            {survey.schema.auditor_objective && (
-              <div className="rounded-md bg-muted/40 p-3 text-sm">
-                <span className="font-medium">Objetivo del auditor: </span>
-                {survey.schema.auditor_objective}
-              </div>
-            )}
-          </div>
+                    <div className="flex-1 grid gap-2">
+                      <Input
+                        value={q.label}
+                        onChange={(e) =>
+                          editQuestion(sec.id, q.id, {
+                            label: e.target.value,
+                          })
+                        }
+                        disabled={!isDraft}
+                        placeholder="Question"
+                        maxLength={500}
+                      />
 
-          <div
-            className="rounded-lg border bg-card p-5"
-            style={{ boxShadow: "var(--shadow-card)" }}
-          >
-            <div className="mb-3 flex items-center gap-2">
-              <Lightbulb className="h-5 w-5 text-muted-foreground" />
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Acciones sugeridas para el auditor
-              </p>
-            </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
+                          Yes / No / N/A compliance check
+                        </span>
 
-            {(survey.schema.auditor_actions?.length ?? 0) > 0 ? (
-              <ul className="list-disc pl-5 text-sm text-muted-foreground space-y-1">
-                {survey.schema.auditor_actions!.map((action, idx) => (
-                  <li key={idx}>{action}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No se registraron acciones sugeridas.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {renderQuestionFilters()}
-
-      {visibleQuestionCount === 0 ? (
-        <div className="rounded-lg border border-dashed bg-card p-8 text-center text-muted-foreground">
-          No hay preguntas para mostrar con el filtro seleccionado.
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {filteredSections.map((sec) => (
-            <div
-              key={sec.id}
-              className="rounded-lg border bg-card p-6"
-              style={{ boxShadow: "var(--shadow-card)" }}
-            >
-              <h2 className="text-lg font-semibold tracking-tight mb-4">
-                {sec.title}
-              </h2>
-
-              <div className="space-y-5">
-                {sec.questions.map((q, i) => (
-                  <div
-                    key={q.id}
-                    className="rounded-md border bg-background p-4"
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className="text-xs text-muted-foreground mt-1 w-6 shrink-0">
-                        {i + 1}.
-                      </span>
-
-                      <div className="flex-1 space-y-3">
-                        <div>
-                          <Label className="text-base">
-                            {q.label}
-                            {q.required && (
-                              <span className="text-destructive ml-1">*</span>
-                            )}
-                          </Label>
-                        </div>
-
-                        <div className="space-y-3">
-                          <div className="flex flex-wrap gap-2">
-                            {[
-                              {
-                                v: "Yes",
-                                cls: "data-[on=true]:bg-success data-[on=true]:text-white data-[on=true]:border-success",
-                              },
-                              {
-                                v: "No",
-                                cls: "data-[on=true]:bg-destructive data-[on=true]:text-destructive-foreground data-[on=true]:border-destructive",
-                              },
-                              {
-                                v: "N/A",
-                                cls: "data-[on=true]:bg-muted data-[on=true]:text-foreground data-[on=true]:border-muted-foreground/40",
-                              },
-                            ].map(({ v, cls }) => {
-                              const on = getCompVal(q.id).value === v;
-
-                              return (
-                                <button
-                                  key={v}
-                                  type="button"
-                                  data-on={on}
-                                  disabled={submitted}
-                                  onClick={() => {
-                                    setActiveQuestionId(q.id);
-                                    setCompField(q.id, { value: v });
-                                  }}
-                                  className={`px-4 py-2 rounded-md border text-sm transition-colors bg-background hover:bg-accent hover:text-accent-foreground ${cls}`}
-                                >
-                                  {v}
-                                </button>
-                              );
-                            })}
-                          </div>
-
-                          {hasReference(q) && (
-                            <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-2">
-                              <div className="font-medium">
-                                Normative reference
-                              </div>
-
-                              {(q.reference?.source_title ||
-                                q.reference?.section ||
-                                q.reference?.page) && (
-                                <div className="text-muted-foreground">
-                                  {[
-                                    q.reference?.source_title,
-                                    q.reference?.section,
-                                    q.reference?.page &&
-                                      `Page ${q.reference.page}`,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" · ")}
-                                </div>
-                              )}
-
-                              {q.reference?.requirement && (
-                                <div>
-                                  <span className="font-medium">
-                                    Requirement:{" "}
-                                  </span>
-                                  {q.reference.requirement}
-                                </div>
-                              )}
-
-                              {q.reference?.source_text && (
-                                <div className="text-xs text-muted-foreground">
-                                  {q.reference.source_text}
-                                </div>
-                              )}
-
-                              {(q.expected_evidence?.length ?? 0) > 0 && (
-                                <div>
-                                  <div className="font-medium">
-                                    Expected evidence:
-                                  </div>
-                                  <ul className="list-disc pl-5 text-muted-foreground">
-                                    {q.expected_evidence!.map((item, idx) => (
-                                      <li key={idx}>{item}</li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {getCompVal(q.id).value === "No" && hasRisk(q) && (
-                            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm space-y-2">
-                              <div className="font-semibold text-destructive">
-                                Finding risk:{" "}
-                                {q.risk?.title ||
-                                  "Potential non-compliance risk"}
-                              </div>
-
-                              <div className="flex flex-wrap gap-2 text-xs">
-                                {q.risk?.category && (
-                                  <span className="rounded-full border px-2 py-0.5">
-                                    {q.risk.category}
-                                  </span>
-                                )}
-
-                                {q.risk?.severity && (
-                                  <span className="rounded-full border px-2 py-0.5">
-                                    Severity: {q.risk.severity}
-                                  </span>
-                                )}
-
-                                {q.risk?.likelihood && (
-                                  <span className="rounded-full border px-2 py-0.5">
-                                    Likelihood: {q.risk.likelihood}
-                                  </span>
-                                )}
-
-                                {q.risk?.impact && (
-                                  <span className="rounded-full border px-2 py-0.5">
-                                    Impact: {q.risk.impact}
-                                  </span>
-                                )}
-                              </div>
-
-                              {q.risk?.description && (
-                                <p className="text-muted-foreground">
-                                  {q.risk.description}
-                                </p>
-                              )}
-
-                              {(q.recommended_actions?.length ?? 0) > 0 && (
-                                <div>
-                                  <div className="font-medium">
-                                    Recommended actions:
-                                  </div>
-                                  <ul className="list-disc pl-5 text-muted-foreground">
-                                    {q.recommended_actions!.map(
-                                      (item, idx) => (
-                                        <li key={idx}>{item}</li>
-                                      )
-                                    )}
-                                  </ul>
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          <Textarea
-                            placeholder="Comment / finding details"
-                            value={getCompVal(q.id).comment ?? ""}
-                            onFocus={() => setActiveQuestionId(q.id)}
-                            onBlur={() => setActiveQuestionId(null)}
+                        <label className="text-xs flex items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            checked={q.required}
+                            disabled={!isDraft}
                             onChange={(e) =>
-                              setCompField(q.id, {
-                                comment: e.target.value,
+                              editQuestion(sec.id, q.id, {
+                                required: e.target.checked,
                               })
                             }
-                            disabled={submitted}
-                            maxLength={2000}
+                          />
+                          Required
+                        </label>
+
+                        {isDraft && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeQuestion(sec.id, q.id)}
+                            className="ml-auto text-muted-foreground hover:text-destructive h-8 w-8"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+
+                      <div className="mt-3 rounded-md border bg-muted/30 p-3 space-y-3">
+                        <div>
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                            Normative reference
+                          </p>
+
+                          <div className="grid sm:grid-cols-3 gap-2 mt-2">
+                            <Input
+                              value={q.reference?.source_title ?? ""}
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  reference: {
+                                    ...(q.reference ?? {}),
+                                    source_title: e.target.value,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                              placeholder="Document / standard"
+                              maxLength={200}
+                            />
+
+                            <Input
+                              value={q.reference?.section ?? ""}
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  reference: {
+                                    ...(q.reference ?? {}),
+                                    section: e.target.value,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                              placeholder="Section / article / clause"
+                              maxLength={120}
+                            />
+
+                            <Input
+                              value={q.reference?.page ?? ""}
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  reference: {
+                                    ...(q.reference ?? {}),
+                                    page: e.target.value,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                              placeholder="Page"
+                              maxLength={50}
+                            />
+                          </div>
+
+                          <Textarea
+                            className="mt-2"
+                            value={q.reference?.requirement ?? ""}
+                            onChange={(e) =>
+                              editQuestion(sec.id, q.id, {
+                                reference: {
+                                  ...(q.reference ?? {}),
+                                  requirement: e.target.value,
+                                },
+                              })
+                            }
+                            disabled={!isDraft}
+                            placeholder="Requirement summary"
+                            maxLength={1000}
                             rows={2}
                           />
 
-                          {!isQuestionCompleted(answers, q.id) && (
-                            <p className="text-xs text-muted-foreground">
-                              Para completar esta pregunta, selecciona una
-                              respuesta y agrega un comentario.
-                            </p>
-                          )}
+                          <Textarea
+                            className="mt-2"
+                            value={q.reference?.source_text ?? ""}
+                            onChange={(e) =>
+                              editQuestion(sec.id, q.id, {
+                                reference: {
+                                  ...(q.reference ?? {}),
+                                  source_text: e.target.value,
+                                },
+                              })
+                            }
+                            disabled={!isDraft}
+                            placeholder="Short source text / excerpt"
+                            maxLength={1500}
+                            rows={2}
+                          />
+                        </div>
 
-                          <div className="flex items-center gap-3">
-                            <label className="cursor-pointer">
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                disabled={submitted}
-                                onChange={(e) =>
-                                  e.target.files?.[0] &&
-                                  onUploadFile(q.id, e.target.files[0])
-                                }
-                              />
+                        <div>
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                            Risk if finding is detected
+                          </p>
 
-                              <span className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
-                                <Camera className="h-4 w-4" />
-                                {getCompVal(q.id).evidence?.name
-                                  ? "Replace photo evidence"
-                                  : "Add photo evidence"}
-                              </span>
-                            </label>
+                          <div className="grid sm:grid-cols-2 gap-2 mt-2">
+                            <Input
+                              value={q.risk?.title ?? ""}
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  risk: {
+                                    ...(q.risk ?? {}),
+                                    title: e.target.value,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                              placeholder="Risk title"
+                              maxLength={200}
+                            />
 
-                            {getCompVal(q.id).evidence?.name && (
-                              <span className="text-xs text-muted-foreground truncate max-w-xs">
-                                {getCompVal(q.id).evidence!.name}
-                              </span>
-                            )}
+                            <Input
+                              value={q.risk?.category ?? ""}
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  risk: {
+                                    ...(q.risk ?? {}),
+                                    category: e.target.value,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                              placeholder="Category"
+                              maxLength={100}
+                            />
+                          </div>
+
+                          <div className="grid sm:grid-cols-3 gap-2 mt-2">
+                            <Select
+                              value={q.risk?.severity ?? ""}
+                              onValueChange={(v) =>
+                                editQuestion(sec.id, q.id, {
+                                  risk: {
+                                    ...(q.risk ?? {}),
+                                    severity: v,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Severity" />
+                              </SelectTrigger>
+
+                              <SelectContent>
+                                <SelectItem value="Low">Low</SelectItem>
+                                <SelectItem value="Medium">Medium</SelectItem>
+                                <SelectItem value="High">High</SelectItem>
+                                <SelectItem value="Critical">
+                                  Critical
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+
+                            <Select
+                              value={q.risk?.likelihood ?? ""}
+                              onValueChange={(v) =>
+                                editQuestion(sec.id, q.id, {
+                                  risk: {
+                                    ...(q.risk ?? {}),
+                                    likelihood: v,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Likelihood" />
+                              </SelectTrigger>
+
+                              <SelectContent>
+                                <SelectItem value="Low">Low</SelectItem>
+                                <SelectItem value="Medium">Medium</SelectItem>
+                                <SelectItem value="High">High</SelectItem>
+                              </SelectContent>
+                            </Select>
+
+                            <Select
+                              value={q.risk?.impact ?? ""}
+                              onValueChange={(v) =>
+                                editQuestion(sec.id, q.id, {
+                                  risk: {
+                                    ...(q.risk ?? {}),
+                                    impact: v,
+                                  },
+                                })
+                              }
+                              disabled={!isDraft}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Impact" />
+                              </SelectTrigger>
+
+                              <SelectContent>
+                                <SelectItem value="Low">Low</SelectItem>
+                                <SelectItem value="Medium">Medium</SelectItem>
+                                <SelectItem value="High">High</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <Textarea
+                            className="mt-2"
+                            value={q.risk?.description ?? ""}
+                            onChange={(e) =>
+                              editQuestion(sec.id, q.id, {
+                                risk: {
+                                  ...(q.risk ?? {}),
+                                  description: e.target.value,
+                                },
+                              })
+                            }
+                            disabled={!isDraft}
+                            placeholder="Risk description"
+                            maxLength={1500}
+                            rows={2}
+                          />
+                        </div>
+
+                        <div className="grid sm:grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-xs">
+                              Recommended actions
+                            </Label>
+
+                            <Textarea
+                              value={(q.recommended_actions ?? []).join("\n")}
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  recommended_actions: e.target.value
+                                    .split("\n")
+                                    .map((x) => x.trim())
+                                    .filter(Boolean),
+                                })
+                              }
+                              disabled={!isDraft}
+                              placeholder="One action per line"
+                              rows={4}
+                            />
+                          </div>
+
+                          <div>
+                            <Label className="text-xs">
+                              Expected evidence
+                            </Label>
+
+                            <Textarea
+                              value={(q.expected_evidence ?? []).join("\n")}
+                              onChange={(e) =>
+                                editQuestion(sec.id, q.id, {
+                                  expected_evidence: e.target.value
+                                    .split("\n")
+                                    .map((x) => x.trim())
+                                    .filter(Boolean),
+                                })
+                              }
+                              disabled={!isDraft}
+                              placeholder="One evidence item per line"
+                              rows={4}
+                            />
                           </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+                </div>
+              ))}
 
-      {renderActionButtons("bottom")}
+              {isDraft && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => addQuestion(sec.id)}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add question
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+
+        {isDraft && (
+          <Button variant="outline" onClick={addSection} className="w-full">
+            <Plus className="h-4 w-4 mr-2" />
+            Add section
+          </Button>
+        )}
+
+        {survey.schema.sections.length === 0 && !isDraft && (
+          <div className="text-center text-muted-foreground py-12">
+            No questions in this survey.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
