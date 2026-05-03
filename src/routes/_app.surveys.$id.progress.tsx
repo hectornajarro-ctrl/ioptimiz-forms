@@ -30,6 +30,7 @@ interface AuditReference {
   page?: string;
   requirement?: string;
   source_text?: string;
+  [key: string]: unknown;
 }
 
 interface AuditRisk {
@@ -39,6 +40,7 @@ interface AuditRisk {
   severity?: string;
   likelihood?: string;
   impact?: string;
+  [key: string]: unknown;
 }
 
 interface Question {
@@ -469,7 +471,7 @@ function SurveyProgress() {
 
     const { error } = await supabase
       .from("action_plan_items")
-      .upsert(rowsToUpsert, {
+      .upsert(rowsToUpsert as never, {
         onConflict: "survey_id,auditor_id,question_id",
       });
 

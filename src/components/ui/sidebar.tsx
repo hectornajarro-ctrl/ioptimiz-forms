@@ -12,11 +12,13 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 
+type AppRole = "admin" | "lead_auditor" | "member_auditor";
+
 type NavItem = {
   title: string;
   to: string;
   icon: React.ComponentType<{ className?: string }>;
-  roles?: Array<"admin" | "leader" | "auditor">;
+  roles?: Array<AppRole>;
 };
 
 export function AppSidebar() {
@@ -30,7 +32,7 @@ export function AppSidebar() {
       title: "Dashboard",
       to: "/",
       icon: LayoutDashboard,
-      roles: ["admin", "leader"],
+      roles: ["admin", "lead_auditor"],
     },
     {
       title: "Users",
@@ -42,7 +44,7 @@ export function AppSidebar() {
       title: "Audit Groups",
       to: "/audit-groups",
       icon: UserCheck,
-      roles: ["admin", "leader"],
+      roles: ["admin", "lead_auditor"],
     },
     {
       title: "Activity Log",
@@ -54,19 +56,19 @@ export function AppSidebar() {
       title: "My Surveys",
       to: "/surveys",
       icon: FileText,
-      roles: ["admin", "leader"],
+      roles: ["admin", "lead_auditor"],
     },
     {
       title: "Action Plans",
       to: "/action-plans",
       icon: ListTodo,
-      roles: ["admin", "leader"],
+      roles: ["admin", "lead_auditor"],
     },
     {
       title: "Assigned Audits",
       to: "/assigned",
       icon: ClipboardCheck,
-      roles: ["admin", "leader", "auditor"],
+      roles: ["admin", "lead_auditor", "member_auditor"],
     },
   ];
 
