@@ -77,7 +77,7 @@ interface Member {
   email: string;
   full_name: string | null;
   progress: number;
-  answered_questions: number;
+  completed_questions: number;
   total_questions: number;
   submitted: boolean;
   response_id: string | null;
@@ -138,44 +138,43 @@ function getQuestionIds(schema: SurveySchema | null | undefined): string[] {
   );
 }
 
-function isAnswered(value: unknown): boolean {
-  if (value === undefined || value === null) return false;
+function getAnswerValue(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
 
-  if (typeof value === "string") {
-    return value.trim().length > 0;
-  }
+  const answer = value as ComplianceAnswer;
 
-  if (typeof value === "number" || typeof value === "boolean") {
-    return true;
-  }
+  if (answer.value === undefined || answer.value === null) return "";
 
-  if (Array.isArray(value)) {
-    return value.length > 0;
-  }
-
-  if (typeof value === "object") {
-    const answer = value as ComplianceAnswer;
-
-    if (answer.value === undefined || answer.value === null) return false;
-
-    if (typeof answer.value === "string") {
-      return answer.value.trim().length > 0;
-    }
-
-    return true;
-  }
-
-  return false;
+  return String(answer.value).trim();
 }
 
-function countAnsweredQuestions(
+function getAnswerComment(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+
+  const answer = value as ComplianceAnswer;
+
+  if (answer.comment === undefined || answer.comment === null) return "";
+
+  return String(answer.comment).trim();
+}
+
+function hasSelectedAnswer(value: unknown): boolean {
+  return getAnswerValue(value).length > 0;
+}
+
+function isCompletedAnswer(value: unknown): boolean {
+  return getAnswerValue(value).length > 0 && getAnswerComment(value).length > 0;
+}
+
+function countCompletedQuestions(
   answers: Record<string, ComplianceAnswer> | null | undefined,
   questionIds: string[]
 ): number {
   if (!answers || questionIds.length === 0) return 0;
 
-  return questionIds.filter((questionId) => isAnswered(answers[questionId]))
-    .length;
+  return questionIds.filter((questionId) =>
+    isCompletedAnswer(answers[questionId])
+  ).length;
 }
 
 function normalizeAnswers(value: unknown): Record<string, ComplianceAnswer> {
@@ -338,8 +337,8 @@ function SurveyProgress() {
 
     const totalQuestions = members[0]?.total_questions ?? 0;
 
-    const answeredQuestions = members.reduce(
-      (sum, member) => sum + member.answered_questions,
+    const completedQuestions = members.reduce(
+      (sum, member) => sum + member.completed_questions,
       0
     );
 
@@ -348,9 +347,9 @@ function SurveyProgress() {
       0
     );
 
-    const answeredPct =
+    const completedPct =
       possibleQuestions > 0
-        ? Math.round((answeredQuestions / possibleQuestions) * 100)
+        ? Math.round((completedQuestions / possibleQuestions) * 100)
         : 0;
 
     const findings = members.reduce((sum, member) => {
@@ -379,9 +378,9 @@ function SurveyProgress() {
       submittedPct,
       avgProgress,
       totalQuestions,
-      answeredQuestions,
+      completedQuestions,
       possibleQuestions,
-      answeredPct,
+      completedPct,
       findings,
       evidenceCount,
       actionPlanItems: actionItems.length,
@@ -768,14 +767,14 @@ function SurveyProgress() {
       const loadedMembers: Member[] = (profiles ?? []).map((p) => {
         const response = respMap.get(p.id);
         const answers = response?.answers ?? {};
-        const answeredQuestions = countAnsweredQuestions(
+        const completedQuestions = countCompletedQuestions(
           answers,
           currentQuestionIds
         );
 
         const calculatedProgress =
           totalQuestions > 0
-            ? Math.round((answeredQuestions / totalQuestions) * 100)
+            ? Math.round((completedQuestions / totalQuestions) * 100)
             : Number(response?.storedProgress ?? 0);
 
         return {
@@ -783,7 +782,7 @@ function SurveyProgress() {
           email: p.email,
           full_name: p.full_name,
           progress: calculatedProgress,
-          answered_questions: answeredQuestions,
+          completed_questions: completedQuestions,
           total_questions: totalQuestions,
           submitted: Boolean(response?.submitted),
           response_id: response?.responseId ?? null,
@@ -857,9 +856,9 @@ function SurveyProgress() {
         </p>
 
         <p className="text-sm text-muted-foreground mt-2">
-          Progress is calculated from answered questions:{" "}
+          Progress is calculated from completed questions:{" "}
           <span className="font-medium">
-            answered questions / total questions
+            answer + comment / total questions
           </span>
           .
         </p>
@@ -939,16 +938,16 @@ function SurveyProgress() {
             >
               <div className="flex items-center gap-2 text-muted-foreground text-xs uppercase tracking-wide font-semibold mb-2">
                 <Clock className="h-4 w-4" />
-                Answered
+                Completed
               </div>
 
               <div className="text-3xl font-semibold">
-                {stats.answeredPct}%
+                {stats.completedPct}%
               </div>
 
               <p className="text-xs text-muted-foreground mt-2">
-                {stats.answeredQuestions} / {stats.possibleQuestions} total
-                answers.
+                {stats.completedQuestions} / {stats.possibleQuestions} total
+                completed questions.
               </p>
             </div>
 
@@ -991,21 +990,26 @@ function SurveyProgress() {
               </div>
 
               <div className="text-muted-foreground">
-                {stats.answeredQuestions} / {stats.possibleQuestions} questions
-                answered
+                {stats.completedQuestions} / {stats.possibleQuestions} completed
+                questions
               </div>
             </div>
 
             <div className="h-3 rounded-full bg-secondary overflow-hidden">
               <div
                 className={`h-full transition-all ${
-                  stats.answeredPct === 100 ? "bg-success" : "bg-accent"
+                  stats.completedPct === 100 ? "bg-success" : "bg-accent"
                 }`}
                 style={{
-                  width: `${stats.answeredPct}%`,
+                  width: `${stats.completedPct}%`,
                 }}
               />
             </div>
+
+            <p className="text-xs text-muted-foreground mt-2">
+              Una pregunta se considera completada solo cuando tiene respuesta y
+              comentario.
+            </p>
           </div>
 
           <div
@@ -1389,7 +1393,7 @@ function SurveyProgress() {
                   <div className="w-full sm:w-56">
                     <div className="flex justify-between text-xs text-muted-foreground mb-1">
                       <span>
-                        {m.answered_questions} / {m.total_questions} answered
+                        {m.completed_questions} / {m.total_questions} completed
                       </span>
                       <span>{Math.round(m.progress)}%</span>
                     </div>
@@ -1450,7 +1454,8 @@ function SurveyProgress() {
 
                         {(section.questions ?? []).map((question, index) => {
                           const answer = m.answers[question.id];
-                          const hasAnswer = isAnswered(answer);
+                          const selectedAnswer = hasSelectedAnswer(answer);
+                          const complete = isCompletedAnswer(answer);
                           const value = answer?.value;
                           const hasComment = !!answer?.comment?.trim();
                           const hasEvidence = !!answer?.evidence?.path;
@@ -1476,7 +1481,7 @@ function SurveyProgress() {
                                   </div>
 
                                   <div className="mt-2 flex flex-wrap items-center gap-2">
-                                    {hasAnswer ? (
+                                    {selectedAnswer ? (
                                       <span
                                         className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${answerBadgeClass(
                                           value
@@ -1487,6 +1492,20 @@ function SurveyProgress() {
                                     ) : (
                                       <span className="inline-flex rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">
                                         Not answered
+                                      </span>
+                                    )}
+
+                                    {complete ? (
+                                      <span className="inline-flex rounded-full border border-success/30 bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
+                                        Complete
+                                      </span>
+                                    ) : selectedAnswer ? (
+                                      <span className="inline-flex rounded-full border border-warning/30 bg-warning/10 px-2.5 py-0.5 text-xs font-medium text-warning-foreground">
+                                        Missing comment
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">
+                                        Pending
                                       </span>
                                     )}
 
