@@ -134,19 +134,43 @@ function normalizeAnswers(value: unknown): Record<string, ComplianceAnswer> {
   return value as Record<string, ComplianceAnswer>;
 }
 
+function getAnswerValue(
+  answers: Record<string, ComplianceAnswer>,
+  questionId: string
+): string {
+  const answer = answers[questionId];
+  const value = answer?.value;
+
+  if (value === undefined || value === null) return "";
+
+  return String(value).trim();
+}
+
 function isQuestionCompleted(
   answers: Record<string, ComplianceAnswer>,
   questionId: string
 ): boolean {
-  const answer = answers[questionId];
+  return getAnswerValue(answers, questionId).length > 0;
+}
 
-  return Boolean(
-    answer &&
-      typeof answer === "object" &&
-      answer.value !== undefined &&
-      answer.value !== null &&
-      String(answer.value).trim() !== ""
-  );
+function uniqueValues(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  values.forEach((value) => {
+    const clean = String(value ?? "").trim();
+
+    if (!clean) return;
+
+    const key = clean.toLowerCase();
+
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(clean);
+    }
+  });
+
+  return result;
 }
 
 function FillSurvey() {
@@ -172,6 +196,7 @@ function FillSurvey() {
   const [openingPdf, setOpeningPdf] = useState(false);
   const [questionFilter, setQuestionFilter] =
     useState<QuestionViewFilter>("all");
+  const [completedValueFilter, setCompletedValueFilter] = useState("all");
 
   const allQuestions = useMemo(
     () => survey?.schema.sections.flatMap((s) => s.questions) ?? [],
@@ -193,16 +218,40 @@ function FillSurvey() {
     return Math.round((completedCount / allQuestions.length) * 100);
   }, [allQuestions.length, completedCount]);
 
+  const completedFilterValues = useMemo(() => {
+    const baseValues = ["Yes", "No", "N/A"];
+
+    const optionValues = allQuestions.flatMap((question) =>
+      asStringArray(question.options)
+    );
+
+    const answerValues = allQuestions
+      .map((question) => getAnswerValue(answers, question.id))
+      .filter(Boolean);
+
+    return uniqueValues([...baseValues, ...optionValues, ...answerValues]);
+  }, [allQuestions, answers]);
+
   const filteredSections = useMemo(() => {
     if (!survey) return [];
 
     return survey.schema.sections
       .map((section) => {
         const filteredQuestions = section.questions.filter((question) => {
-          const completed = isQuestionCompleted(answers, question.id);
+          const answerValue = getAnswerValue(answers, question.id);
+          const completed = answerValue.length > 0;
 
-          if (questionFilter === "completed") return completed;
-          if (questionFilter === "pending") return !completed;
+          if (questionFilter === "pending") {
+            return !completed;
+          }
+
+          if (questionFilter === "completed") {
+            if (!completed) return false;
+
+            if (completedValueFilter === "all") return true;
+
+            return answerValue === completedValueFilter;
+          }
 
           return true;
         });
@@ -213,7 +262,7 @@ function FillSurvey() {
         };
       })
       .filter((section) => section.questions.length > 0);
-  }, [survey, answers, questionFilter]);
+  }, [survey, answers, questionFilter, completedValueFilter]);
 
   const visibleQuestionCount = useMemo(() => {
     return filteredSections.reduce(
@@ -293,7 +342,9 @@ function FillSurvey() {
       }
 
       if (notYetOpen) {
-        toast.error(`This audit opens on ${new Date(startsAt!).toLocaleString()}`);
+        toast.error(
+          `This audit opens on ${new Date(startsAt!).toLocaleString()}`
+        );
         navigate({ to: "/assigned" });
         return;
       }
@@ -365,6 +416,21 @@ function FillSurvey() {
       setResponseId(created.id);
     })();
   }, [id, user, navigate]);
+
+  useEffect(() => {
+    if (questionFilter !== "completed") {
+      setCompletedValueFilter("all");
+    }
+  }, [questionFilter]);
+
+  useEffect(() => {
+    if (
+      completedValueFilter !== "all" &&
+      !completedFilterValues.includes(completedValueFilter)
+    ) {
+      setCompletedValueFilter("all");
+    }
+  }, [completedValueFilter, completedFilterValues]);
 
   const getCompVal = (qid: string) => answers[qid] ?? {};
 
@@ -485,6 +551,7 @@ function FillSurvey() {
 
       setSubmitted(true);
       setQuestionFilter("all");
+      setCompletedValueFilter("all");
       toast.success("Submitted ✓");
       return;
     }
@@ -615,6 +682,18 @@ function FillSurvey() {
 
         <Button
           type="button"
+          variant={questionFilter === "pending" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setQuestionFilter("pending")}
+        >
+          Ver pendiente
+          <span className="ml-2 rounded-full bg-background/20 px-2 text-xs">
+            {pendingCount}
+          </span>
+        </Button>
+
+        <Button
+          type="button"
           variant={questionFilter === "completed" ? "default" : "outline"}
           size="sm"
           onClick={() => setQuestionFilter("completed")}
@@ -625,17 +704,27 @@ function FillSurvey() {
           </span>
         </Button>
 
-        <Button
-          type="button"
-          variant={questionFilter === "pending" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setQuestionFilter("pending")}
-        >
-          Ver pendiente
-          <span className="ml-2 rounded-full bg-background/20 px-2 text-xs">
-            {pendingCount}
-          </span>
-        </Button>
+        {questionFilter === "completed" && (
+          <div className="flex items-center gap-2">
+            <Label className="text-xs text-muted-foreground">
+              Respuesta
+            </Label>
+
+            <select
+              className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+              value={completedValueFilter}
+              onChange={(e) => setCompletedValueFilter(e.target.value)}
+            >
+              <option value="all">Todo</option>
+
+              {completedFilterValues.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       <div className="mt-3 text-xs text-muted-foreground">
@@ -643,6 +732,13 @@ function FillSurvey() {
         Progreso actual:{" "}
         <span className="font-medium">{completedCount}</span> completada(s),{" "}
         <span className="font-medium">{pendingCount}</span> pendiente(s).
+        {questionFilter === "completed" && completedValueFilter !== "all" && (
+          <>
+            {" "}
+            Filtro aplicado:{" "}
+            <span className="font-medium">{completedValueFilter}</span>.
+          </>
+        )}
       </div>
     </div>
   );
