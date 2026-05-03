@@ -15,10 +15,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppSurveysRouteImport } from './routes/_app.surveys'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppAssignedRouteImport } from './routes/_app.assigned'
+import { Route as AppActionPlansRouteImport } from './routes/_app.action-plans'
 import { Route as AppSurveysIdRouteImport } from './routes/_app.surveys.$id'
 import { Route as AppAssignedIdRouteImport } from './routes/_app.assigned.$id'
 import { Route as AppAdminUsersRouteImport } from './routes/_app.admin.users'
-import { Route as AppAdminGroupsRouteImport } from './routes/_app.admin.groups'
+import { Route as AppAdminAuditsRouteImport } from './routes/_app.admin.audits'
 import { Route as AppAdminActivityRouteImport } from './routes/_app.admin.activity'
 import { Route as AppSurveysIdProgressRouteImport } from './routes/_app.surveys.$id.progress'
 
@@ -51,6 +52,11 @@ const AppAssignedRoute = AppAssignedRouteImport.update({
   path: '/assigned',
   getParentRoute: () => AppRoute,
 } as any)
+const AppActionPlansRoute = AppActionPlansRouteImport.update({
+  id: '/action-plans',
+  path: '/action-plans',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSurveysIdRoute = AppSurveysIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -66,9 +72,9 @@ const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
   path: '/admin/users',
   getParentRoute: () => AppRoute,
 } as any)
-const AppAdminGroupsRoute = AppAdminGroupsRouteImport.update({
-  id: '/admin/groups',
-  path: '/admin/groups',
+const AppAdminAuditsRoute = AppAdminAuditsRouteImport.update({
+  id: '/admin/audits',
+  path: '/admin/audits',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAdminActivityRoute = AppAdminActivityRouteImport.update({
@@ -85,11 +91,12 @@ const AppSurveysIdProgressRoute = AppSurveysIdProgressRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/action-plans': typeof AppActionPlansRoute
   '/assigned': typeof AppAssignedRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
   '/surveys': typeof AppSurveysRouteWithChildren
   '/admin/activity': typeof AppAdminActivityRoute
-  '/admin/groups': typeof AppAdminGroupsRoute
+  '/admin/audits': typeof AppAdminAuditsRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/assigned/$id': typeof AppAssignedIdRoute
   '/surveys/$id': typeof AppSurveysIdRouteWithChildren
@@ -98,11 +105,12 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/action-plans': typeof AppActionPlansRoute
   '/assigned': typeof AppAssignedRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
   '/surveys': typeof AppSurveysRouteWithChildren
   '/admin/activity': typeof AppAdminActivityRoute
-  '/admin/groups': typeof AppAdminGroupsRoute
+  '/admin/audits': typeof AppAdminAuditsRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/assigned/$id': typeof AppAssignedIdRoute
   '/surveys/$id': typeof AppSurveysIdRouteWithChildren
@@ -113,11 +121,12 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/_app/action-plans': typeof AppActionPlansRoute
   '/_app/assigned': typeof AppAssignedRouteWithChildren
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/surveys': typeof AppSurveysRouteWithChildren
   '/_app/admin/activity': typeof AppAdminActivityRoute
-  '/_app/admin/groups': typeof AppAdminGroupsRoute
+  '/_app/admin/audits': typeof AppAdminAuditsRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/assigned/$id': typeof AppAssignedIdRoute
   '/_app/surveys/$id': typeof AppSurveysIdRouteWithChildren
@@ -128,11 +137,12 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/action-plans'
     | '/assigned'
     | '/dashboard'
     | '/surveys'
     | '/admin/activity'
-    | '/admin/groups'
+    | '/admin/audits'
     | '/admin/users'
     | '/assigned/$id'
     | '/surveys/$id'
@@ -141,11 +151,12 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/action-plans'
     | '/assigned'
     | '/dashboard'
     | '/surveys'
     | '/admin/activity'
-    | '/admin/groups'
+    | '/admin/audits'
     | '/admin/users'
     | '/assigned/$id'
     | '/surveys/$id'
@@ -155,11 +166,12 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/login'
+    | '/_app/action-plans'
     | '/_app/assigned'
     | '/_app/dashboard'
     | '/_app/surveys'
     | '/_app/admin/activity'
-    | '/_app/admin/groups'
+    | '/_app/admin/audits'
     | '/_app/admin/users'
     | '/_app/assigned/$id'
     | '/_app/surveys/$id'
@@ -216,6 +228,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAssignedRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/action-plans': {
+      id: '/_app/action-plans'
+      path: '/action-plans'
+      fullPath: '/action-plans'
+      preLoaderRoute: typeof AppActionPlansRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/surveys/$id': {
       id: '/_app/surveys/$id'
       path: '/$id'
@@ -237,11 +256,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminUsersRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/admin/groups': {
-      id: '/_app/admin/groups'
-      path: '/admin/groups'
-      fullPath: '/admin/groups'
-      preLoaderRoute: typeof AppAdminGroupsRouteImport
+    '/_app/admin/audits': {
+      id: '/_app/admin/audits'
+      path: '/admin/audits'
+      fullPath: '/admin/audits'
+      preLoaderRoute: typeof AppAdminAuditsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/admin/activity': {
@@ -298,20 +317,22 @@ const AppSurveysRouteWithChildren = AppSurveysRoute._addFileChildren(
 )
 
 interface AppRouteChildren {
+  AppActionPlansRoute: typeof AppActionPlansRoute
   AppAssignedRoute: typeof AppAssignedRouteWithChildren
   AppDashboardRoute: typeof AppDashboardRoute
   AppSurveysRoute: typeof AppSurveysRouteWithChildren
   AppAdminActivityRoute: typeof AppAdminActivityRoute
-  AppAdminGroupsRoute: typeof AppAdminGroupsRoute
+  AppAdminAuditsRoute: typeof AppAdminAuditsRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppActionPlansRoute: AppActionPlansRoute,
   AppAssignedRoute: AppAssignedRouteWithChildren,
   AppDashboardRoute: AppDashboardRoute,
   AppSurveysRoute: AppSurveysRouteWithChildren,
   AppAdminActivityRoute: AppAdminActivityRoute,
-  AppAdminGroupsRoute: AppAdminGroupsRoute,
+  AppAdminAuditsRoute: AppAdminAuditsRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
 }
 
