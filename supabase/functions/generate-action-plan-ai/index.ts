@@ -169,20 +169,43 @@ function buildPromptPayload(survey: SurveyRow, items: ActionPlanItem[]) {
   };
 }
 
-function safeJsonParse(content: string): AIActionPlanResult[] {
-  const cleaned = content
-    .replace(/^```json/i, "")
-    .replace(/^```/i, "")
-    .replace(/```$/i, "")
-    .trim();
+function extractJsonText(text: string): string {
+  const trimmed = text.trim();
 
+  if (trimmed.startsWith("```json")) {
+    return trimmed.replace(/^```json/i, "").replace(/```$/i, "").trim();
+  }
+
+  if (trimmed.startsWith("```")) {
+    return trimmed.replace(/^```/i, "").replace(/```$/i, "").trim();
+  }
+
+  const firstObject = trimmed.indexOf("{");
+  const lastObject = trimmed.lastIndexOf("}");
+
+  if (firstObject >= 0 && lastObject > firstObject) {
+    return trimmed.slice(firstObject, lastObject + 1);
+  }
+
+  const firstArray = trimmed.indexOf("[");
+  const lastArray = trimmed.lastIndexOf("]");
+
+  if (firstArray >= 0 && lastArray > firstArray) {
+    return trimmed.slice(firstArray, lastArray + 1);
+  }
+
+  return trimmed;
+}
+
+function safeJsonParse(content: string): AIActionPlanResult[] {
+  const cleaned = extractJsonText(content);
   const parsed = JSON.parse(cleaned);
 
   if (Array.isArray(parsed)) {
     return parsed as AIActionPlanResult[];
   }
 
-  if (Array.isArray(parsed.items)) {
+  if (parsed && Array.isArray(parsed.items)) {
     return parsed.items as AIActionPlanResult[];
   }
 
@@ -200,7 +223,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const openAiKey = Deno.env.get("OPENAI_API_KEY");
+    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
 
     if (!supabaseUrl || !anonKey || !serviceRoleKey) {
       return jsonResponse(
@@ -211,10 +234,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (!openAiKey) {
+    if (!lovableApiKey) {
       return jsonResponse(
         {
-          error: "Missing OPENAI_API_KEY secret",
+          error:
+            "Missing LOVABLE_API_KEY. This function must be deployed from Lovable Cloud with AI enabled.",
         },
         500
       );
@@ -233,9 +257,7 @@ Deno.serve(async (req) => {
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
     const {
-      data: {
-        user,
-      },
+      data: { user },
       error: userError,
     } = await supabaseUser.auth.getUser();
 
@@ -319,7 +341,8 @@ Deno.serve(async (req) => {
     if (!isAdmin && !isLead) {
       return jsonResponse(
         {
-          error: "Only Admin or Lead Auditor can generate action plan AI recommendations",
+          error:
+            "Only Admin or Lead Auditor can generate action plan AI recommendations",
         },
         403
       );
@@ -362,66 +385,77 @@ Deno.serve(async (req) => {
 
     const systemPrompt = `
 Eres un experto senior en auditoría, cumplimiento normativo, gestión de riesgos y planes de acción.
-Tu tarea es enriquecer hallazgos de auditoría con acciones correctivas, riesgos, beneficios y argumentos ejecutivos.
+
+Tu tarea es enriquecer hallazgos de auditoría con:
+- acciones correctivas específicas
+- riesgos de mantener la no conformidad
+- impacto para la organización
+- beneficios de corregir el hallazgo
+- argumento que ayude al auditor a sustentar el hallazgo ante la empresa auditada
 
 Responde SOLO JSON válido.
 No uses markdown.
 No inventes normativa no indicada.
 Trabaja en español profesional, claro y útil para auditores.
-El objetivo es ayudar al auditor a sustentar la no conformidad ante la empresa auditada, explicando riesgos y beneficios de corregirla.
+El objetivo es ayudar al auditor a convencer a la empresa auditada explicando riesgos, impacto y beneficios.
 
-Por cada hallazgo debes devolver:
-[
-  {
-    "id": "id del action_plan_item",
-    "risk": {
-      "title": "riesgo principal",
-      "description": "explicación del riesgo de la no conformidad",
-      "category": "categoría del riesgo",
-      "severity": "Low | Medium | High | Critical",
-      "likelihood": "Low | Medium | High",
-      "impact": "Low | Medium | High"
-    },
-    "recommended_actions": [
-      "acción correctiva específica 1",
-      "acción correctiva específica 2",
-      "acción correctiva específica 3"
-    ],
-    "expected_evidence": [
-      "evidencia esperada 1",
-      "evidencia esperada 2"
-    ],
-    "ai_risk_summary": "resumen ejecutivo del riesgo de mantener esta no conformidad",
-    "ai_business_impact": "impacto operativo, legal, reputacional, de seguridad o económico para la organización",
-    "ai_benefits": [
-      "beneficio de corregir el hallazgo 1",
-      "beneficio de corregir el hallazgo 2",
-      "beneficio de corregir el hallazgo 3"
-    ],
-    "ai_auditor_argument": "argumento breve y convincente que el auditor puede usar para explicar a la empresa por qué debe corregirse el hallazgo"
-  }
-]
+Devuelve exactamente este formato:
+
+{
+  "items": [
+    {
+      "id": "id del action_plan_item",
+      "risk": {
+        "title": "riesgo principal",
+        "description": "explicación del riesgo de la no conformidad",
+        "category": "categoría del riesgo",
+        "severity": "Low | Medium | High | Critical",
+        "likelihood": "Low | Medium | High",
+        "impact": "Low | Medium | High"
+      },
+      "recommended_actions": [
+        "acción correctiva específica 1",
+        "acción correctiva específica 2",
+        "acción correctiva específica 3"
+      ],
+      "expected_evidence": [
+        "evidencia esperada 1",
+        "evidencia esperada 2"
+      ],
+      "ai_risk_summary": "resumen ejecutivo del riesgo de mantener esta no conformidad",
+      "ai_business_impact": "impacto operativo, legal, reputacional, de seguridad o económico para la organización",
+      "ai_benefits": [
+        "beneficio de corregir el hallazgo 1",
+        "beneficio de corregir el hallazgo 2",
+        "beneficio de corregir el hallazgo 3"
+      ],
+      "ai_auditor_argument": "argumento breve y convincente que el auditor puede usar para explicar por qué debe corregirse el hallazgo"
+    }
+  ]
+}
 
 Reglas:
 - recommended_actions deben ser concretas, auditables y accionables.
 - expected_evidence debe ser evidencia verificable.
 - No uses frases genéricas si hay contexto específico.
 - Si el comentario del auditor es informal, transfórmalo en lenguaje profesional sin cambiar el sentido.
-- Si falta contexto, genera recomendaciones prudentes basadas en la pregunta, referencia normativa y objetivo del survey.
+- Si falta contexto, genera recomendaciones prudentes basadas en la pregunta, referencia normativa, resumen del PDF y objetivo del survey.
+- Los riesgos deben explicar claramente qué puede pasar si la empresa no corrige la no conformidad.
+- Los beneficios deben ayudar a justificar valor: cumplimiento, seguridad, trazabilidad, eficiencia, reducción de riesgo, continuidad operativa o reputación.
 `;
 
     const userPrompt = JSON.stringify(promptPayload, null, 2);
 
-    const openAiResponse = await fetch(
-      "https://api.openai.com/v1/chat/completions",
+    const aiResponse = await fetch(
+      "https://ai.gateway.lovable.dev/v1/chat/completions",
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${openAiKey}`,
+          Authorization: `Bearer ${lovableApiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: "google/gemini-2.5-flash",
           temperature: 0.2,
           messages: [
             {
@@ -430,29 +464,27 @@ Reglas:
             },
             {
               role: "user",
-              content: userPrompt,
+              content: `Contexto de auditoría y hallazgos:\n${userPrompt}`,
             },
           ],
         }),
       }
     );
 
-    if (!openAiResponse.ok) {
-      const errorText = await openAiResponse.text();
+    if (!aiResponse.ok) {
+      const errorText = await aiResponse.text();
 
       return jsonResponse(
         {
-          error: `OpenAI request failed: ${errorText}`,
+          error: `Lovable AI request failed: ${errorText}`,
         },
         500
       );
     }
 
-    const completion = await openAiResponse.json();
+    const completion = await aiResponse.json();
 
-    const content =
-      completion?.choices?.[0]?.message?.content ??
-      "";
+    const content = completion?.choices?.[0]?.message?.content ?? "";
 
     let aiItems: AIActionPlanResult[];
 
@@ -469,7 +501,6 @@ Reglas:
     }
 
     const validIds = new Set(items.map((item) => item.id));
-
     const updates = aiItems.filter((item) => validIds.has(item.id));
 
     for (const item of updates) {
