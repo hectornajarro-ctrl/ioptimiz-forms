@@ -15,6 +15,7 @@ import {
   Lightbulb,
   Eye,
   FileText,
+  Save,
 } from "lucide-react";
 
 type FieldType =
@@ -115,6 +116,21 @@ function hasRisk(q: Question) {
   );
 }
 
+function hasObjectContent(value: unknown): boolean {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.keys(value as Record<string, unknown>).length > 0
+  );
+}
+
+function normalizeAnswers(value: unknown): Record<string, ComplianceAnswer> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  return value as Record<string, ComplianceAnswer>;
+}
+
 function FillSurvey() {
   const { id } = Route.useParams();
   const { user } = useAuth();
@@ -131,7 +147,7 @@ function FillSurvey() {
   } | null>(null);
 
   const [responseId, setResponseId] = useState<string | null>(null);
-  const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [answers, setAnswers] = useState<Record<string, ComplianceAnswer>>({});
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -200,14 +216,27 @@ function FillSurvey() {
 
       const { data: existing } = await supabase
         .from("survey_responses")
-        .select("id,answers,submitted")
+        .select(
+          "id,answers,draft_answers,submitted"
+        )
         .eq("survey_id", id)
         .eq("user_id", user.id)
         .maybeSingle();
 
       if (existing) {
+        const publicAnswers = normalizeAnswers((existing as any).answers);
+        const draftAnswers = normalizeAnswers((existing as any).draft_answers);
+
         setResponseId(existing.id);
-        setAnswers((existing.answers as any) ?? {});
+
+        if (existing.submitted) {
+          setAnswers(publicAnswers);
+        } else if (hasObjectContent(draftAnswers)) {
+          setAnswers(draftAnswers);
+        } else {
+          setAnswers(publicAnswers);
+        }
+
         setSubmitted(existing.submitted);
 
         if (closed && !existing.submitted) {
@@ -279,8 +308,10 @@ function FillSurvey() {
           survey_id: id,
           user_id: user.id,
           answers: {},
+          draft_answers: {},
           progress: 0,
-        })
+          draft_progress: 0,
+        } as any)
         .select("id")
         .single();
 
@@ -293,8 +324,7 @@ function FillSurvey() {
     })();
   }, [id, user, navigate]);
 
-  const getCompVal = (qid: string) =>
-    (answers[qid] ?? {}) as ComplianceAnswer;
+  const getCompVal = (qid: string) => answers[qid] ?? {};
 
   const setCompField = (qid: string, patch: Partial<ComplianceAnswer>) => {
     const cur = getCompVal(qid);
@@ -359,7 +389,12 @@ function FillSurvey() {
     toast.success("File attached");
   };
 
-  const persist = async (opts: { submit?: boolean } = {}) => {
+  const persist = async (
+    opts: {
+      draft?: boolean;
+      submit?: boolean;
+    } = {}
+  ) => {
     if (!responseId) return;
 
     if (
@@ -371,11 +406,6 @@ function FillSurvey() {
     }
 
     setSaving(true);
-
-    const payload: any = {
-      answers,
-      progress,
-    };
 
     if (opts.submit) {
       const missing = allQuestions.filter((q) => {
@@ -391,26 +421,70 @@ function FillSurvey() {
         return toast.error(`${missing.length} required question(s) missing`);
       }
 
-      payload.submitted = true;
-      payload.submitted_at = new Date().toISOString();
-      payload.progress = 100;
+      const payload = {
+        answers,
+        draft_answers: answers,
+        progress: 100,
+        draft_progress: 100,
+        submitted: true,
+        submitted_at: new Date().toISOString(),
+        progress_saved_at: new Date().toISOString(),
+        draft_saved_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from("survey_responses")
+        .update(payload as any)
+        .eq("id", responseId);
+
+      setSaving(false);
+
+      if (error) return toast.error(error.message);
+
+      setSubmitted(true);
+      toast.success("Submitted ✓");
+      return;
     }
+
+    if (opts.draft) {
+      const payload = {
+        draft_answers: answers,
+        draft_progress: progress,
+        draft_saved_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from("survey_responses")
+        .update(payload as any)
+        .eq("id", responseId);
+
+      setSaving(false);
+
+      if (error) return toast.error(error.message);
+
+      toast.success("Draft saved. Only you can continue from this draft.");
+      return;
+    }
+
+    const payload = {
+      answers,
+      draft_answers: answers,
+      progress,
+      draft_progress: progress,
+      progress_saved_at: new Date().toISOString(),
+      draft_saved_at: new Date().toISOString(),
+    };
 
     const { error } = await supabase
       .from("survey_responses")
-      .update(payload)
+      .update(payload as any)
       .eq("id", responseId);
 
     setSaving(false);
 
     if (error) return toast.error(error.message);
 
-    if (opts.submit) {
-      setSubmitted(true);
-      toast.success("Submitted ✓");
-    } else {
-      toast.success("Saved");
-    }
+    toast.success("Progress saved. Your leader can now see this progress.");
   };
 
   const exportReport = async () => {
@@ -476,6 +550,14 @@ function FillSurvey() {
 
         {survey.description && (
           <p className="text-muted-foreground mt-2">{survey.description}</p>
+        )}
+
+        {!submitted && (
+          <div className="mt-4 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+            <span className="font-medium">Save draft</span> keeps the answers
+            only as your working draft. <span className="font-medium">Save progress</span>{" "}
+            publishes your current progress so your Leader/Admin can see it.
+          </div>
         )}
 
         {submitted && (
@@ -797,12 +879,22 @@ function FillSurvey() {
       </div>
 
       {!submitted && (
-        <div className="mt-6 flex items-center gap-3">
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            onClick={() => persist({ draft: true })}
+            disabled={saving}
+          >
+            <FileText className="h-4 w-4 mr-2" />
+            {saving ? "Saving…" : "Save draft"}
+          </Button>
+
           <Button
             variant="outline"
             onClick={() => persist()}
             disabled={saving}
           >
+            <Save className="h-4 w-4 mr-2" />
             {saving ? "Saving…" : "Save progress"}
           </Button>
 
