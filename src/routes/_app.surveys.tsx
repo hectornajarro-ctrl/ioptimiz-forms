@@ -34,6 +34,12 @@ interface SurveySchema {
   sections?: Section[];
 }
 
+interface ComplianceAnswer {
+  value?: unknown;
+  comment?: unknown;
+  evidence?: unknown;
+}
+
 interface SurveyRow {
   id: string;
   title: string;
@@ -58,7 +64,7 @@ interface SurveyResponseRow {
   survey_id: string;
   user_id: string;
   submitted: boolean | null;
-  answers: Record<string, unknown> | null;
+  answers: Record<string, ComplianceAnswer> | null;
 }
 
 export const Route = createFileRoute("/_app/surveys")({
@@ -78,48 +84,39 @@ function getQuestionIds(schema: SurveySchema | null | undefined): string[] {
   );
 }
 
-function isAnswered(value: unknown): boolean {
-  if (value === undefined || value === null) return false;
+function getAnswerValue(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
 
-  if (typeof value === "string") {
-    return value.trim().length > 0;
-  }
+  const answer = value as ComplianceAnswer;
 
-  if (typeof value === "number" || typeof value === "boolean") {
-    return true;
-  }
+  if (answer.value === undefined || answer.value === null) return "";
 
-  if (Array.isArray(value)) {
-    return value.length > 0;
-  }
-
-  if (typeof value === "object") {
-    const answer = value as {
-      value?: unknown;
-      comment?: unknown;
-      evidence?: unknown;
-    };
-
-    if (answer.value === undefined || answer.value === null) return false;
-
-    if (typeof answer.value === "string") {
-      return answer.value.trim().length > 0;
-    }
-
-    return true;
-  }
-
-  return false;
+  return String(answer.value).trim();
 }
 
-function countAnsweredQuestions(
-  answers: Record<string, unknown> | null | undefined,
+function getAnswerComment(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+
+  const answer = value as ComplianceAnswer;
+
+  if (answer.comment === undefined || answer.comment === null) return "";
+
+  return String(answer.comment).trim();
+}
+
+function isCompletedAnswer(value: unknown): boolean {
+  return getAnswerValue(value).length > 0 && getAnswerComment(value).length > 0;
+}
+
+function countCompletedQuestions(
+  answers: Record<string, ComplianceAnswer> | null | undefined,
   questionIds: string[]
 ): number {
   if (!answers || questionIds.length === 0) return 0;
 
-  return questionIds.filter((questionId) => isAnswered(answers[questionId]))
-    .length;
+  return questionIds.filter((questionId) =>
+    isCompletedAnswer(answers[questionId])
+  ).length;
 }
 
 function Surveys() {
@@ -166,78 +163,89 @@ function Surveys() {
     const surveys = (data ?? []) as SurveyRow[];
 
     const leadIds = Array.from(
-      new Set(surveys.map((s) => s.lead_auditor_id).filter(Boolean))
+      new Set(surveys.map((survey) => survey.lead_auditor_id).filter(Boolean))
     );
 
     if (leadIds.length > 0) {
-      const { data: leadProfiles } = await supabase
+      const { data: leadProfiles, error: leadError } = await supabase
         .from("profiles")
         .select("id,email,full_name")
         .in("id", leadIds);
 
-      const leadMap = new Map(
-        (leadProfiles ?? []).map((p) => [
-          p.id,
-          {
-            email: p.email,
-            full_name: p.full_name,
-          },
-        ])
-      );
+      if (leadError) {
+        toast.error(leadError.message);
+      } else {
+        const leadMap = new Map(
+          (leadProfiles ?? []).map((profile) => [
+            profile.id,
+            {
+              email: profile.email,
+              full_name: profile.full_name,
+            },
+          ])
+        );
 
-      surveys.forEach((s) => {
-        const lead = leadMap.get(s.lead_auditor_id);
-        s.lead_auditor_name = lead?.full_name ?? null;
-        s.lead_auditor_email = lead?.email ?? null;
-      });
+        surveys.forEach((survey) => {
+          const lead = leadMap.get(survey.lead_auditor_id);
+
+          survey.lead_auditor_name = lead?.full_name ?? null;
+          survey.lead_auditor_email = lead?.email ?? null;
+        });
+      }
     }
 
     const approved = surveys.filter(
-      (s) => s.status === "approved" && s.assigned_group_id
+      (survey) => survey.status === "approved" && survey.assigned_group_id
     );
 
     if (approved.length > 0) {
-      const groupIds = Array.from(
-        new Set(approved.map((s) => s.assigned_group_id!))
+      const auditIds = Array.from(
+        new Set(approved.map((survey) => survey.assigned_group_id!))
       );
 
-      const surveyIds = approved.map((s) => s.id);
+      const surveyIds = approved.map((survey) => survey.id);
 
-      const [{ data: members }, { data: responses }] = await Promise.all([
-        supabase
-          .from("audit_group_members")
-          .select("group_id,user_id")
-          .in("group_id", groupIds),
-        supabase
-          .from("survey_responses")
-          .select("survey_id,user_id,submitted,answers")
-          .in("survey_id", surveyIds),
-      ]);
+      const [{ data: members, error: membersError }, { data: responses }] =
+        await Promise.all([
+          supabase
+            .from("audits_members" as any)
+            .select("group_id,user_id")
+            .in("group_id", auditIds),
+          supabase
+            .from("survey_responses")
+            .select("survey_id,user_id,submitted,answers")
+            .in("survey_id", surveyIds),
+        ]);
 
-      const membersByGroup = new Map<string, string[]>();
+      if (membersError) {
+        toast.error(membersError.message);
+      }
 
-      (members ?? []).forEach((m) => {
-        const current = membersByGroup.get(m.group_id) ?? [];
-        current.push(m.user_id);
-        membersByGroup.set(m.group_id, current);
+      const membersByAudit = new Map<string, string[]>();
+
+      ((members ?? []) as any[]).forEach((member) => {
+        const current = membersByAudit.get(member.group_id) ?? [];
+
+        current.push(member.user_id);
+        membersByAudit.set(member.group_id, current);
       });
 
       const responsesBySurvey = new Map<string, SurveyResponseRow[]>();
 
       ((responses ?? []) as SurveyResponseRow[]).forEach((response) => {
         const current = responsesBySurvey.get(response.survey_id) ?? [];
+
         current.push(response);
         responsesBySurvey.set(response.survey_id, current);
       });
 
-      surveys.forEach((s) => {
-        if (s.status !== "approved" || !s.assigned_group_id) return;
+      surveys.forEach((survey) => {
+        if (survey.status !== "approved" || !survey.assigned_group_id) return;
 
-        const memberIds = membersByGroup.get(s.assigned_group_id) ?? [];
+        const memberIds = membersByAudit.get(survey.assigned_group_id) ?? [];
         const memberIdSet = new Set(memberIds);
-        const surveyResponses = responsesBySurvey.get(s.id) ?? [];
-
-        const questionIds = getQuestionIds(s.schema);
+        const surveyResponses = responsesBySurvey.get(survey.id) ?? [];
+        const questionIds = getQuestionIds(survey.schema);
         const totalQuestions = questionIds.length;
 
         const submittedMembers = surveyResponses.filter(
@@ -248,7 +256,7 @@ function Surveys() {
           .filter((response) => memberIdSet.has(response.user_id))
           .reduce(
             (total, response) =>
-              total + countAnsweredQuestions(response.answers, questionIds),
+              total + countCompletedQuestions(response.answers, questionIds),
             0
           );
 
@@ -259,15 +267,14 @@ function Surveys() {
             ? Math.round((answeredQuestions / possibleQuestions) * 100)
             : 0;
 
-        s.total_members = memberIds.length;
-        s.submitted_members = submittedMembers;
-        s.all_completed =
+        survey.total_members = memberIds.length;
+        survey.submitted_members = submittedMembers;
+        survey.all_completed =
           memberIds.length > 0 && submittedMembers >= memberIds.length;
-
-        s.total_questions = totalQuestions;
-        s.answered_questions = answeredQuestions;
-        s.possible_questions = possibleQuestions;
-        s.progress_percent = progressPercent;
+        survey.total_questions = totalQuestions;
+        survey.answered_questions = answeredQuestions;
+        survey.possible_questions = possibleQuestions;
+        survey.progress_percent = progressPercent;
       });
     }
 
@@ -293,7 +300,9 @@ function Surveys() {
       .eq("lead_auditor_id", user.id)
       .ilike("title", "untitled survey%");
 
-    const taken = new Set((existing ?? []).map((r) => r.title.toLowerCase()));
+    const taken = new Set(
+      (existing ?? []).map((row) => row.title.toLowerCase())
+    );
 
     let title = "Untitled survey";
     let n = 2;
@@ -314,15 +323,20 @@ function Surveys() {
 
     setCreating(false);
 
-    if (error) return toast.error(error.message);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
 
     navigate({
       to: "/surveys/$id",
-      params: { id: data.id },
+      params: {
+        id: data.id,
+      },
     });
   };
 
-  const statusBadge = (s: SurveyRow["status"]) => {
+  const statusBadge = (status: SurveyRow["status"]) => {
     const map: Record<
       string,
       {
@@ -352,15 +366,15 @@ function Surveys() {
       },
     };
 
-    const v = map[s];
-    const Icon = v.icon;
+    const value = map[status];
+    const Icon = value.icon;
 
     return (
       <span
-        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs ${v.bg} ${v.text}`}
+        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-sm ${value.bg} ${value.text}`}
       >
-        <Icon className="h-3 w-3" />
-        {v.label}
+        <Icon className="h-3.5 w-3.5" />
+        {value.label}
       </span>
     );
   };
@@ -370,14 +384,14 @@ function Surveys() {
   }
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6 gap-4">
+    <div className="container mx-auto max-w-6xl py-8">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">
+          <h1 className="text-2xl font-semibold tracking-tight">
             {isAdmin ? "All Surveys" : "My Surveys"}
           </h1>
 
-          <p className="text-muted-foreground mt-1">
+          <p className="mt-1 text-muted-foreground">
             {isAdmin
               ? "View every compliance audit form and monitor progress across all lead auditors."
               : "Create compliance audits, upload PDFs, and monitor progress for your assigned forms."}
@@ -385,144 +399,128 @@ function Surveys() {
         </div>
 
         <Button onClick={createSurvey} disabled={creating}>
-          <Plus className="h-4 w-4 mr-2" />
+          <Plus className="mr-2 h-4 w-4" />
           {creating ? "Creating…" : "New survey"}
         </Button>
       </div>
 
       {loadingRows ? (
-        <div className="text-center py-16 border border-dashed rounded-lg text-muted-foreground">
+        <div className="rounded-lg border bg-card p-8 text-center text-muted-foreground">
           Loading surveys…
         </div>
       ) : rows.length === 0 ? (
-        <div className="text-center py-16 border border-dashed rounded-lg text-muted-foreground">
-          <FileText className="h-10 w-10 mx-auto mb-3 opacity-50" />
-          No surveys yet. Click <strong>New survey</strong> to start.
+        <div className="rounded-lg border border-dashed bg-card p-16 text-center text-muted-foreground">
+          <FileText className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
+          No surveys yet. Click{" "}
+          <span className="font-semibold">New survey</span> to start.
         </div>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 items-stretch">
-          {rows.map((s) => {
-            const progress = s.progress_percent ?? 0;
-            const answered = s.answered_questions ?? 0;
-            const possible = s.possible_questions ?? 0;
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {rows.map((survey) => {
+            const progress = survey.progress_percent ?? 0;
+            const answered = survey.answered_questions ?? 0;
+            const possible = survey.possible_questions ?? 0;
 
             return (
               <div
-                key={s.id}
-                className="relative rounded-lg border border-border bg-card p-5 h-full flex flex-col transition-colors hover:border-accent"
+                key={survey.id}
+                className="flex min-h-[260px] flex-col rounded-lg border bg-card p-5"
                 style={{ boxShadow: "var(--shadow-card)" }}
               >
-                <Link
-                  to="/surveys/$id"
-                  params={{ id: s.id }}
-                  className="block"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <FileText className="h-5 w-5 text-muted-foreground" />
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
 
-                    <div className="flex items-center gap-2">
-                      {s.status === "approved" && s.all_completed && (
-                        <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs bg-success/15 text-success">
-                          <CheckCircle2 className="h-3 w-3" />
-                          Completed
-                        </span>
-                      )}
-
-                      {statusBadge(s.status)}
-                    </div>
-                  </div>
-
-                  <div className="font-semibold tracking-tight line-clamp-3 min-h-[72px]">
-                    {s.title}
-                  </div>
-
-                  {s.description ? (
-                    <p className="text-sm text-muted-foreground mt-2 line-clamp-2 min-h-[44px]">
-                      {s.description}
-                    </p>
-                  ) : (
-                    <div className="mt-2 min-h-[44px]" />
-                  )}
-                </Link>
-
-                <div className="pt-4">
-                  {isAdmin && (
-                    <Link
-                      to="/surveys/$id"
-                      params={{ id: s.id }}
-                      className="block"
-                    >
-                      <div className="rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground">
-                        <span className="font-medium">Lead auditor: </span>
-                        {s.lead_auditor_name ||
-                          s.lead_auditor_email ||
-                          s.lead_auditor_id}
-                      </div>
-                    </Link>
-                  )}
-
-                  {s.status === "approved" &&
-                    typeof s.total_members === "number" && (
-                      <Link
-                        to="/surveys/$id"
-                        params={{ id: s.id }}
-                        className="block"
-                      >
-                        <div className="mt-4">
-                          <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
-                            <span className="inline-flex items-center gap-1">
-                              <Users className="h-3 w-3" />
-                              Members completed
-                            </span>
-
-                            <span>
-                              {s.submitted_members ?? 0} / {s.total_members}
-                            </span>
-                          </div>
-
-                          <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                            <div
-                              className={`h-full transition-all ${
-                                progress === 100 ? "bg-success" : "bg-accent"
-                              }`}
-                              style={{
-                                width: `${progress}%`,
-                              }}
-                            />
-                          </div>
-
-                          <div className="mt-1.5 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                            <span>
-                              Questions answered: {answered} / {possible}
-                            </span>
-
-                            <span className="font-medium whitespace-nowrap">
-                              Progress: {progress}%
-                            </span>
-                          </div>
-                        </div>
-                      </Link>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {survey.status === "approved" && survey.all_completed && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2.5 py-0.5 text-sm text-success">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Completed
+                      </span>
                     )}
 
-                  <div className="text-xs text-muted-foreground mt-4">
-                    {new Date(s.created_at).toLocaleDateString()}
+                    {statusBadge(survey.status)}
                   </div>
+                </div>
 
-                  {s.status === "approved" && (
-                    <div className="mt-4">
+                <Link
+                  to="/surveys/$id"
+                  params={{ id: survey.id }}
+                  className="line-clamp-2 text-lg font-semibold tracking-tight hover:underline"
+                >
+                  {survey.title}
+                </Link>
+
+                {survey.description ? (
+                  <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+                    {survey.description}
+                  </p>
+                ) : (
+                  <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+                    No description.
+                  </p>
+                )}
+
+                <div className="mt-auto pt-4">
+                  {isAdmin && (
+                    <div className="mb-3 rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                      <span className="font-medium">Lead auditor: </span>
+                      {survey.lead_auditor_name ||
+                        survey.lead_auditor_email ||
+                        survey.lead_auditor_id}
+                    </div>
+                  )}
+
+                  {survey.status === "approved" &&
+                    typeof survey.total_members === "number" && (
+                      <div className="mb-4 space-y-2">
+                        <div className="flex items-center justify-between text-sm text-muted-foreground">
+                          <span className="inline-flex items-center gap-1">
+                            <Users className="h-4 w-4" />
+                            Members completed
+                          </span>
+                          <span>
+                            {survey.submitted_members ?? 0} /{" "}
+                            {survey.total_members}
+                          </span>
+                        </div>
+
+                        <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                          <div
+                            className={`h-full ${
+                              progress === 100 ? "bg-success" : "bg-accent"
+                            }`}
+                            style={{
+                              width: `${progress}%`,
+                            }}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>
+                            Questions completed: {answered} / {possible}
+                          </span>
+                          <span>Progress: {progress}%</span>
+                        </div>
+                      </div>
+                    )}
+
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-muted-foreground">
+                      {new Date(survey.created_at).toLocaleDateString()}
+                    </span>
+
+                    {survey.status === "approved" && (
                       <Button variant="outline" size="sm" asChild>
                         <Link
                           to="/surveys/$id/progress"
-                          params={{
-                            id: s.id,
-                          }}
+                          params={{ id: survey.id }}
                         >
-                          <BarChart3 className="h-4 w-4 mr-1" />
+                          <BarChart3 className="mr-2 h-4 w-4" />
                           View progress
                         </Link>
                       </Button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
             );
