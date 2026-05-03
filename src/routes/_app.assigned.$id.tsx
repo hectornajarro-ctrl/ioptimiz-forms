@@ -212,6 +212,7 @@ function FillSurvey() {
   const [questionFilter, setQuestionFilter] =
     useState<QuestionViewFilter>("all");
   const [completedValueFilter, setCompletedValueFilter] = useState("all");
+  const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
 
   const allQuestions = useMemo(
     () => survey?.schema.sections.flatMap((s) => s.questions) ?? [],
@@ -233,7 +234,8 @@ function FillSurvey() {
     return Math.round((completedCount / allQuestions.length) * 100);
   }, [allQuestions.length, completedCount]);
 
-  const canSubmit = allQuestions.length > 0 && completedCount === allQuestions.length;
+  const canSubmit =
+    allQuestions.length > 0 && completedCount === allQuestions.length;
 
   const completedFilterValues = useMemo(() => {
     const baseValues = ["Yes", "No", "N/A"];
@@ -259,6 +261,10 @@ function FillSurvey() {
           const answerValue = getAnswerValue(answers, question.id);
           const completed = isQuestionCompleted(answers, question.id);
 
+          if (question.id === activeQuestionId) {
+            return true;
+          }
+
           if (questionFilter === "pending") {
             return !completed;
           }
@@ -280,7 +286,7 @@ function FillSurvey() {
         };
       })
       .filter((section) => section.questions.length > 0);
-  }, [survey, answers, questionFilter, completedValueFilter]);
+  }, [survey, answers, questionFilter, completedValueFilter, activeQuestionId]);
 
   const visibleQuestionCount = useMemo(() => {
     return filteredSections.reduce(
@@ -388,7 +394,6 @@ function FillSurvey() {
           .eq("group_id", groupId);
 
         const isMember = !!existingMembers?.some((m) => m.user_id === user.id);
-
         const isUnclaimed = (existingMembers?.length ?? 0) === 0;
 
         if (!isMember && grp?.open_enrollment && isUnclaimed) {
@@ -573,6 +578,7 @@ function FillSurvey() {
       setSubmitted(true);
       setQuestionFilter("all");
       setCompletedValueFilter("all");
+      setActiveQuestionId(null);
       toast.success("Submitted ✓");
       return;
     }
@@ -991,9 +997,10 @@ function FillSurvey() {
                                   type="button"
                                   data-on={on}
                                   disabled={submitted}
-                                  onClick={() =>
-                                    setCompField(q.id, { value: v })
-                                  }
+                                  onClick={() => {
+                                    setActiveQuestionId(q.id);
+                                    setCompField(q.id, { value: v });
+                                  }}
                                   className={`px-4 py-2 rounded-md border text-sm transition-colors bg-background hover:bg-accent hover:text-accent-foreground ${cls}`}
                                 >
                                   {v}
@@ -1113,6 +1120,8 @@ function FillSurvey() {
                           <Textarea
                             placeholder="Comment / finding details"
                             value={getCompVal(q.id).comment ?? ""}
+                            onFocus={() => setActiveQuestionId(q.id)}
+                            onBlur={() => setActiveQuestionId(null)}
                             onChange={(e) =>
                               setCompField(q.id, {
                                 comment: e.target.value,
