@@ -17,189 +17,76 @@ const FORM_SCHEMA_TOOL = {
     parameters: {
       type: "object",
       properties: {
-        title: {
-          type: "string",
-          description: "Title of the survey/audit.",
-        },
-        description: {
-          type: "string",
-          description:
-            "One-sentence description of the audit, in Spanish.",
-        },
-        summary: {
-          type: "string",
-          description:
-            "Clear Spanish summary of what the PDF says, focused on what matters for the audit.",
-        },
-        auditor_objective: {
-          type: "string",
-          description:
-            "Main audit objective in Spanish. Explain what the auditor must verify based on the PDF.",
-        },
+        title: { type: "string", description: "Title of the survey/audit." },
+        description: { type: "string", description: "One-sentence description of the audit, in Spanish." },
+        summary: { type: "string", description: "Clear Spanish summary of what the PDF says, focused on what matters for the audit." },
+        auditor_objective: { type: "string", description: "Main audit objective in Spanish. Explain what the auditor must verify based on the PDF." },
         auditor_actions: {
           type: "array",
           items: { type: "string" },
-          description:
-            "Suggested practical actions in Spanish that the auditor should perform before or during the audit.",
+          description: "Suggested practical actions in Spanish that the auditor should perform before or during the audit.",
         },
         sections: {
           type: "array",
           items: {
             type: "object",
             properties: {
-              title: {
-                type: "string",
-                description: "Audit section title.",
-              },
+              title: { type: "string", description: "Audit section title." },
               questions: {
                 type: "array",
                 items: {
                   type: "object",
                   properties: {
-                    label: {
-                      type: "string",
-                      description:
-                        "The audit question in Spanish. Phrase it so Yes means compliant and No means non-compliant.",
-                    },
-                    type: {
-                      type: "string",
-                      enum: ["yes_no"],
-                      description: "Always use yes_no for compliance audits.",
-                    },
-                    required: {
-                      type: "boolean",
-                      description: "Usually true.",
-                    },
-                    options: {
-                      type: "array",
-                      items: { type: "string" },
-                      description:
-                        "Keep empty. The app automatically uses Yes, No and N/A.",
-                    },
-                    scale_max: {
-                      type: "number",
-                      description:
-                        "Keep 5 for compatibility. Ignored in compliance mode.",
-                    },
+                    label: { type: "string", description: "The audit question in Spanish. Phrase it so Yes means compliant and No means non-compliant." },
+                    type: { type: "string", enum: ["yes_no"], description: "Always use yes_no for compliance audits." },
+                    required: { type: "boolean", description: "Usually true." },
+                    options: { type: "array", items: { type: "string" }, description: "Keep empty. The app automatically uses Yes, No and N/A." },
+                    scale_max: { type: "number", description: "Keep 5 for compatibility. Ignored in compliance mode." },
                     reference: {
                       type: "object",
-                      description:
-                        "Normative or regulatory reference that supports the question.",
+                      description: "Normative or regulatory reference that supports the question.",
                       properties: {
-                        source_title: {
-                          type: "string",
-                          description:
-                            "Name of the regulation, policy, standard or document if available.",
-                        },
-                        section: {
-                          type: "string",
-                          description:
-                            "Section, chapter, clause, article or numeral from the source document.",
-                        },
-                        page: {
-                          type: "string",
-                          description:
-                            "Page number or page range if identifiable.",
-                        },
-                        requirement: {
-                          type: "string",
-                          description:
-                            "Short Spanish summary of the requirement that must be verified.",
-                        },
-                        source_text: {
-                          type: "string",
-                          description:
-                            "Brief relevant excerpt or paraphrase from the PDF. Keep it short.",
-                        },
+                        source_title: { type: "string", description: "Name of the regulation, policy, standard or document if available." },
+                        section: { type: "string", description: "Section, chapter, clause, article or numeral from the source document." },
+                        page: { type: "string", description: "Page number or page range if identifiable." },
+                        requirement: { type: "string", description: "Short Spanish summary of the requirement that must be verified." },
+                        source_text: { type: "string", description: "Brief relevant excerpt or paraphrase from the PDF. Keep it short." },
                       },
                     },
                     risk: {
                       type: "object",
-                      description:
-                        "Risk and impact associated with a finding or non-compliance. Usually triggered when the answer is No.",
+                      description: "Risk and impact associated with a finding or non-compliance. Usually triggered when the answer is No.",
                       properties: {
-                        title: {
-                          type: "string",
-                          description:
-                            "Short Spanish risk title. Must be specific to the question.",
-                        },
-                        description: {
-                          type: "string",
-                          description:
-                            "Spanish explanation of the risk if the requirement is not met.",
-                        },
+                        title: { type: "string", description: "Short Spanish risk title. Must be specific to the question." },
+                        description: { type: "string", description: "Spanish explanation of the risk if the requirement is not met." },
                         category: {
                           type: "string",
-                          enum: [
-                            "Legal",
-                            "Compliance",
-                            "Operational",
-                            "Financial",
-                            "Security",
-                            "Reputational",
-                            "Environmental",
-                            "Safety",
-                            "Quality",
-                            "Other",
-                          ],
+                          enum: ["Legal", "Compliance", "Operational", "Financial", "Security", "Reputational", "Environmental", "Safety", "Quality", "Other"],
                         },
-                        severity: {
-                          type: "string",
-                          enum: ["Low", "Medium", "High", "Critical"],
-                          description:
-                            "Severity of the risk if the finding is confirmed.",
-                        },
-                        likelihood: {
-                          type: "string",
-                          enum: ["Low", "Medium", "High"],
-                          description:
-                            "Likelihood that the risk materializes if the organization does not correct the finding.",
-                        },
-                        impact: {
-                          type: "string",
-                          enum: ["Low", "Medium", "High"],
-                          description:
-                            "Impact level for the business, operation, safety, legal compliance, reputation or continuity.",
-                        },
-                        business_impact: {
-                          type: "string",
-                          description:
-                            "Spanish explanation of the operational, legal, reputational, safety, financial or business impact of not correcting the non-compliance.",
-                        },
-                        auditor_argument: {
-                          type: "string",
-                          description:
-                            "Short Spanish argument the auditor can use to explain why this finding matters to the audited company.",
-                        },
+                        severity: { type: "string", enum: ["Low", "Medium", "High", "Critical"], description: "Severity of the risk if the finding is confirmed." },
+                        likelihood: { type: "string", enum: ["Low", "Medium", "High"], description: "Likelihood that the risk materializes if the organization does not correct the finding." },
+                        impact: { type: "string", enum: ["Low", "Medium", "High"], description: "Impact level for the business, operation, safety, legal compliance, reputation or continuity." },
+                        business_impact: { type: "string", description: "Spanish explanation of the operational, legal, reputational, safety, financial or business impact of not correcting the non-compliance." },
+                        auditor_argument: { type: "string", description: "Short Spanish argument the auditor can use to explain why this finding matters to the audited company." },
                         benefits_of_correction: {
                           type: "array",
                           items: { type: "string" },
-                          description:
-                            "Spanish list of benefits of correcting this finding, such as compliance, traceability, safety, continuity, efficiency or risk reduction.",
+                          description: "Spanish list of benefits of correcting this finding, such as compliance, traceability, safety, continuity, efficiency or risk reduction.",
                         },
                       },
                     },
                     recommended_actions: {
                       type: "array",
                       items: { type: "string" },
-                      description:
-                        "Corrective or preventive actions recommended if a finding is detected. Must be specific, auditable and useful.",
+                      description: "Corrective or preventive actions recommended if a finding is detected. Must be specific, auditable and useful.",
                     },
                     expected_evidence: {
                       type: "array",
                       items: { type: "string" },
-                      description:
-                        "Documents, records, screenshots, photos or other evidence the auditor should review.",
+                      description: "Documents, records, screenshots, photos or other evidence the auditor should review.",
                     },
                   },
-                  required: [
-                    "label",
-                    "type",
-                    "reference",
-                    "risk",
-                    "recommended_actions",
-                    "expected_evidence",
-                  ],
+                  required: ["label", "type", "reference", "risk", "recommended_actions", "expected_evidence"],
                 },
               },
             },
@@ -207,49 +94,31 @@ const FORM_SCHEMA_TOOL = {
           },
         },
       },
-      required: [
-        "title",
-        "description",
-        "summary",
-        "auditor_objective",
-        "auditor_actions",
-        "sections",
-      ],
+      required: ["title", "description", "summary", "auditor_objective", "auditor_actions", "sections"],
     },
   },
 };
 
 function asArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-
-  return value
-    .map((item) => String(item ?? "").trim())
-    .filter((item) => item.length > 0);
+  return value.map((item) => String(item ?? "").trim()).filter((item) => item.length > 0);
 }
 
 function cleanObject(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const obj = value as Record<string, unknown>;
   const cleaned: Record<string, unknown> = {};
-
   for (const [key, raw] of Object.entries(obj)) {
     if (raw === null || raw === undefined) continue;
-
     if (typeof raw === "string" && raw.trim() === "") continue;
-
     if (Array.isArray(raw)) {
       const arr = asArray(raw);
       if (arr.length === 0) continue;
       cleaned[key] = arr;
       continue;
     }
-
     cleaned[key] = typeof raw === "string" ? raw.trim() : raw;
   }
-
   return Object.keys(cleaned).length ? cleaned : undefined;
 }
 
@@ -258,21 +127,17 @@ function normalizeString(value: unknown): string {
 }
 
 function getSectionTitles(sections: any[]): string[] {
-  return sections
-    .map((section) => String(section.title ?? "").trim())
-    .filter(Boolean);
+  return sections.map((section) => String(section.title ?? "").trim()).filter(Boolean);
 }
 
 function collectActionsFromSections(sections: any[]): string[] {
   const seen = new Set<string>();
   const actions: string[] = [];
-
   for (const section of sections) {
     for (const question of section.questions ?? []) {
       for (const action of question.recommended_actions ?? []) {
         const clean = String(action ?? "").trim();
         const key = clean.toLowerCase();
-
         if (clean && !seen.has(key)) {
           seen.add(key);
           actions.push(clean);
@@ -280,50 +145,30 @@ function collectActionsFromSections(sections: any[]): string[] {
       }
     }
   }
-
   return actions.slice(0, 8);
 }
 
 function buildFallbackSummary(sections: any[]): string {
-  const questionCount = sections.reduce(
-    (sum, section) => sum + (section.questions?.length ?? 0),
-    0
-  );
-
+  const questionCount = sections.reduce((sum, section) => sum + (section.questions?.length ?? 0), 0);
   const sectionTitles = getSectionTitles(sections).slice(0, 5);
-
   if (questionCount === 0) {
     return "El PDF fue procesado, pero no se identificaron preguntas auditables suficientes. Se recomienda revisar manualmente el documento y volver a ejecutar la extracción si corresponde.";
   }
-
-  const topics =
-    sectionTitles.length > 0
-      ? ` Los principales temas identificados son: ${sectionTitles.join(", ")}.`
-      : "";
-
+  const topics = sectionTitles.length > 0 ? ` Los principales temas identificados son: ${sectionTitles.join(", ")}.` : "";
   return `El PDF contiene requisitos y criterios de cumplimiento que deben ser verificados durante la auditoría. La IA identificó ${questionCount} pregunta(s) auditable(s) organizadas en ${sections.length} sección(es).${topics}`;
 }
 
 function buildFallbackObjective(sections: any[]): string {
-  const questionCount = sections.reduce(
-    (sum, section) => sum + (section.questions?.length ?? 0),
-    0
-  );
-
+  const questionCount = sections.reduce((sum, section) => sum + (section.questions?.length ?? 0), 0);
   if (questionCount === 0) {
     return "Revisar el PDF y confirmar manualmente los requisitos que deben convertirse en controles o preguntas de auditoría.";
   }
-
   return "Verificar que la organización cumpla con los requisitos identificados en el PDF, revisando evidencias, responsables, registros, controles asociados, riesgos de incumplimiento e impacto para la operación.";
 }
 
 function buildFallbackActions(sections: any[]): string[] {
   const actionsFromQuestions = collectActionsFromSections(sections);
-
-  if (actionsFromQuestions.length > 0) {
-    return actionsFromQuestions;
-  }
-
+  if (actionsFromQuestions.length > 0) return actionsFromQuestions;
   return [
     "Revisar el documento normativo y confirmar el alcance de la auditoría.",
     "Solicitar políticas, procedimientos y registros relacionados con los requisitos identificados.",
@@ -358,12 +203,7 @@ function buildFallbackRisk(questionLabel: string): Record<string, unknown> {
 
 function normalizeRisk(questionLabel: string, value: unknown) {
   const risk = cleanObject(value) ?? {};
-
-  const normalized: Record<string, unknown> = {
-    ...buildFallbackRisk(questionLabel),
-    ...risk,
-  };
-
+  const normalized: Record<string, unknown> = { ...buildFallbackRisk(questionLabel), ...risk };
   normalized.title = normalizeString(normalized.title);
   normalized.description = normalizeString(normalized.description);
   normalized.category = normalizeString(normalized.category) || "Compliance";
@@ -372,20 +212,15 @@ function normalizeRisk(questionLabel: string, value: unknown) {
   normalized.impact = normalizeString(normalized.impact) || "Medium";
   normalized.business_impact = normalizeString(normalized.business_impact);
   normalized.auditor_argument = normalizeString(normalized.auditor_argument);
-  normalized.benefits_of_correction = asArray(
-    normalized.benefits_of_correction
-  );
-
+  normalized.benefits_of_correction = asArray(normalized.benefits_of_correction);
   if (!normalized.business_impact) {
     normalized.business_impact =
       "La no conformidad puede afectar el cumplimiento, la trazabilidad, la continuidad operativa, la reputación y la capacidad de demostrar control efectivo ante auditorías o inspecciones.";
   }
-
   if (!normalized.auditor_argument) {
     normalized.auditor_argument =
       "Corregir este hallazgo permite reducir exposición a riesgos, demostrar control y fortalecer la capacidad de la organización para cumplir con sus obligaciones.";
   }
-
   if ((normalized.benefits_of_correction as string[]).length === 0) {
     normalized.benefits_of_correction = [
       "Mejora la trazabilidad del cumplimiento.",
@@ -393,7 +228,6 @@ function normalizeRisk(questionLabel: string, value: unknown) {
       "Fortalece el control interno y la evidencia objetiva.",
     ];
   }
-
   return normalized;
 }
 
@@ -419,55 +253,32 @@ function buildFallbackExpectedEvidence(): string[] {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      headers: corsHeaders,
-    });
+    return new Response(null, { headers: corsHeaders });
   }
 
   try {
     const { surveyId } = await req.json();
-
-    if (!surveyId) {
-      throw new Error("surveyId required");
-    }
+    if (!surveyId) throw new Error("surveyId required");
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY not configured");
-    }
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
     const authHeader = req.headers.get("Authorization");
-
-    if (!authHeader) {
-      throw new Error("Unauthorized");
-    }
+    if (!authHeader) throw new Error("Unauthorized");
 
     const userClient = createClient(
       SUPABASE_URL,
-      Deno.env.get("SUPABASE_ANON_KEY") ??
-        Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ??
-        "",
-      {
-        global: {
-          headers: {
-            Authorization: authHeader,
-          },
-        },
-      }
+      Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "",
+      { global: { headers: { Authorization: authHeader } } }
     );
 
     const { data: userRes } = await userClient.auth.getUser();
-
     const userId = userRes?.user?.id;
-
-    if (!userId) {
-      throw new Error("Unauthorized");
-    }
+    if (!userId) throw new Error("Unauthorized");
 
     const { data: survey, error: sErr } = await admin
       .from("surveys")
@@ -475,9 +286,7 @@ serve(async (req) => {
       .eq("id", surveyId)
       .single();
 
-    if (sErr || !survey) {
-      throw new Error("Survey not found");
-    }
+    if (sErr || !survey) throw new Error("Survey not found");
 
     if (survey.lead_auditor_id !== userId) {
       const { data: roleRow } = await admin
@@ -486,32 +295,17 @@ serve(async (req) => {
         .eq("user_id", userId)
         .eq("role", "admin")
         .maybeSingle();
-
-      if (!roleRow) {
-        throw new Error("Forbidden");
-      }
+      if (!roleRow) throw new Error("Forbidden");
     }
 
-    if (!survey.pdf_path) {
-      throw new Error("No PDF uploaded");
-    }
+    if (!survey.pdf_path) throw new Error("No PDF uploaded");
 
-    const { data: blob, error: dlErr } = await admin.storage
-      .from("survey-pdfs")
-      .download(survey.pdf_path);
-
-    if (dlErr || !blob) {
-      throw new Error("Could not download PDF");
-    }
+    const { data: blob, error: dlErr } = await admin.storage.from("survey-pdfs").download(survey.pdf_path);
+    if (dlErr || !blob) throw new Error("Could not download PDF");
 
     const buf = new Uint8Array(await blob.arrayBuffer());
-
     let binary = "";
-
-    for (let i = 0; i < buf.length; i++) {
-      binary += String.fromCharCode(buf[i]);
-    }
-
+    for (let i = 0; i < buf.length; i++) binary += String.fromCharCode(buf[i]);
     const b64 = btoa(binary);
 
     const systemPrompt = `
@@ -570,94 +364,50 @@ Your task:
     const userInstruction =
       "Extrae un cuestionario completo de auditoría de cumplimiento desde este PDF. Incluye obligatoriamente resumen del PDF, objetivo del auditor, acciones sugeridas para el auditor, referencias normativas, riesgos por hallazgos, impacto del incumplimiento, argumento para sustentar el hallazgo, beneficios de corregir, acciones recomendadas y evidencias esperadas por cada pregunta.";
 
-    const aiRes = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages: [
-            {
-              role: "system",
-              content: systemPrompt,
-            },
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: userInstruction,
-                },
-                {
-                  type: "file",
-                  file: {
-                    filename: "survey.pdf",
-                    file_data: `data:application/pdf;base64,${b64}`,
-                  },
-                },
-              ],
-            },
-          ],
-          tools: [FORM_SCHEMA_TOOL],
-          tool_choice: {
-            type: "function",
-            function: {
-              name: "build_form_schema",
-            },
+    const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: userInstruction },
+              { type: "file", file: { filename: "survey.pdf", file_data: `data:application/pdf;base64,${b64}` } },
+            ],
           },
-        }),
-      }
-    );
+        ],
+        tools: [FORM_SCHEMA_TOOL],
+        tool_choice: { type: "function", function: { name: "build_form_schema" } },
+      }),
+    });
 
     if (!aiRes.ok) {
       const t = await aiRes.text();
-
       console.error("AI gateway error", aiRes.status, t);
-
       if (aiRes.status === 429) {
-        return new Response(
-          JSON.stringify({
-            error: "Rate limit reached. Please try again shortly.",
-          }),
-          {
-            status: 429,
-            headers: {
-              ...corsHeaders,
-              "Content-Type": "application/json",
-            },
-          }
-        );
+        return new Response(JSON.stringify({ error: "Rate limit reached. Please try again shortly." }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-
       if (aiRes.status === 402) {
-        return new Response(
-          JSON.stringify({
-            error: "AI credits exhausted. Add credits in workspace settings.",
-          }),
-          {
-            status: 402,
-            headers: {
-              ...corsHeaders,
-              "Content-Type": "application/json",
-            },
-          }
-        );
+        return new Response(JSON.stringify({ error: "AI credits exhausted. Add credits in workspace settings." }), {
+          status: 402,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-
       throw new Error("AI extraction failed");
     }
 
     const aiJson = await aiRes.json();
-
     const toolCall = aiJson.choices?.[0]?.message?.tool_calls?.[0];
-
-    if (!toolCall) {
-      throw new Error("AI did not return a structured response");
-    }
+    if (!toolCall) throw new Error("AI did not return a structured response");
 
     const args = JSON.parse(toolCall.function.arguments);
 
@@ -666,7 +416,6 @@ Your task:
       title: String(sec.title ?? `Section ${si + 1}`).trim(),
       questions: (sec.questions ?? []).map((q: any, qi: number) => {
         const label = String(q.label ?? `Question ${qi + 1}`).trim();
-
         return {
           id: `q${si}_${qi}_${crypto.randomUUID().slice(0, 8)}`,
           label,
@@ -692,42 +441,19 @@ Your task:
 
     const schema = {
       summary: normalizeString(args.summary) || buildFallbackSummary(sections),
-      auditor_objective:
-        normalizeString(args.auditor_objective) ||
-        buildFallbackObjective(sections),
-      auditor_actions:
-        aiAuditorActions.length > 0
-          ? aiAuditorActions
-          : buildFallbackActions(sections),
+      auditor_objective: normalizeString(args.auditor_objective) || buildFallbackObjective(sections),
+      auditor_actions: aiAuditorActions.length > 0 ? aiAuditorActions : buildFallbackActions(sections),
       sections,
     };
 
-    const update: any = {
-      mode: "compliance",
-      schema,
-    };
+    const update: any = { mode: "compliance", schema };
+    if (args.title && (!survey.title || survey.title === "Untitled survey")) update.title = args.title;
+    if (args.description) update.description = args.description;
 
-    if (args.title && (!survey.title || survey.title === "Untitled survey")) {
-      update.title = args.title;
-    }
+    const { error: upErr } = await admin.from("surveys").update(update).eq("id", surveyId);
+    if (upErr) throw upErr;
 
-    if (args.description) {
-      update.description = args.description;
-    }
-
-    const { error: upErr } = await admin
-      .from("surveys")
-      .update(update)
-      .eq("id", surveyId);
-
-    if (upErr) {
-      throw upErr;
-    }
-
-    const questionCount = sections.reduce(
-      (sum: number, section: any) => sum + (section.questions?.length ?? 0),
-      0
-    );
+    const questionCount = sections.reduce((sum: number, section: any) => sum + (section.questions?.length ?? 0), 0);
 
     return new Response(
       JSON.stringify({
@@ -737,35 +463,19 @@ Your task:
         has_summary: Boolean(schema.summary),
         has_auditor_objective: Boolean(schema.auditor_objective),
         auditor_actions: schema.auditor_actions.length,
-        has_risks: sections.some((section: any) =>
-          section.questions?.some((question: any) => Boolean(question.risk))
-        ),
+        has_risks: sections.some((section: any) => section.questions?.some((question: any) => Boolean(question.risk))),
         has_impacts: sections.some((section: any) =>
-          section.questions?.some(
-            (question: any) =>
-              Boolean(question.risk?.impact) ||
-              Boolean(question.risk?.business_impact)
-          )
+          section.questions?.some((question: any) => Boolean(question.risk?.impact) || Boolean(question.risk?.business_impact))
         ),
       }),
-      {
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
-      }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
     console.error("extract-survey error:", e);
-
     const msg = e instanceof Error ? e.message : "Unknown error";
-
     return new Response(JSON.stringify({ error: msg }), {
       status: 500,
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json",
-      },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
