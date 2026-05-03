@@ -14,64 +14,144 @@ export type Database = {
   }
   public: {
     Tables: {
-      audit_group_members: {
+      action_plan_items: {
         Row: {
-          added_at: string
-          group_id: string
+          ai_auditor_argument: string | null
+          ai_benefits: string[] | null
+          ai_business_impact: string | null
+          ai_generated_at: string | null
+          ai_risk_summary: string | null
+          auditor_id: string | null
+          closure_comment: string | null
+          closure_evidence_name: string | null
+          closure_evidence_path: string | null
+          corrective_action: string | null
+          created_at: string
+          created_by: string | null
+          due_date: string | null
+          expected_evidence: string[]
+          finding_comment: string | null
           id: string
-          user_id: string
+          question_id: string
+          question_label: string
+          recommended_actions: string[]
+          reference: Json
+          responsible_name: string | null
+          responsible_user_id: string | null
+          risk: Json
+          section_title: string
+          status: string
+          survey_id: string
+          survey_response_id: string | null
+          updated_at: string
+          updated_by: string | null
         }
         Insert: {
-          added_at?: string
-          group_id: string
+          ai_auditor_argument?: string | null
+          ai_benefits?: string[] | null
+          ai_business_impact?: string | null
+          ai_generated_at?: string | null
+          ai_risk_summary?: string | null
+          auditor_id?: string | null
+          closure_comment?: string | null
+          closure_evidence_name?: string | null
+          closure_evidence_path?: string | null
+          corrective_action?: string | null
+          created_at?: string
+          created_by?: string | null
+          due_date?: string | null
+          expected_evidence?: string[]
+          finding_comment?: string | null
           id?: string
-          user_id: string
+          question_id: string
+          question_label?: string
+          recommended_actions?: string[]
+          reference?: Json
+          responsible_name?: string | null
+          responsible_user_id?: string | null
+          risk?: Json
+          section_title?: string
+          status?: string
+          survey_id: string
+          survey_response_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
         }
         Update: {
-          added_at?: string
-          group_id?: string
+          ai_auditor_argument?: string | null
+          ai_benefits?: string[] | null
+          ai_business_impact?: string | null
+          ai_generated_at?: string | null
+          ai_risk_summary?: string | null
+          auditor_id?: string | null
+          closure_comment?: string | null
+          closure_evidence_name?: string | null
+          closure_evidence_path?: string | null
+          corrective_action?: string | null
+          created_at?: string
+          created_by?: string | null
+          due_date?: string | null
+          expected_evidence?: string[]
+          finding_comment?: string | null
           id?: string
-          user_id?: string
+          question_id?: string
+          question_label?: string
+          recommended_actions?: string[]
+          reference?: Json
+          responsible_name?: string | null
+          responsible_user_id?: string | null
+          risk?: Json
+          section_title?: string
+          status?: string
+          survey_id?: string
+          survey_response_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "audit_group_members_group_id_fkey"
-            columns: ["group_id"]
+            foreignKeyName: "action_plan_items_auditor_id_fkey"
+            columns: ["auditor_id"]
             isOneToOne: false
-            referencedRelation: "audit_groups"
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "action_plan_items_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "action_plan_items_responsible_user_id_fkey"
+            columns: ["responsible_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "action_plan_items_survey_id_fkey"
+            columns: ["survey_id"]
+            isOneToOne: false
+            referencedRelation: "surveys"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "action_plan_items_survey_response_id_fkey"
+            columns: ["survey_response_id"]
+            isOneToOne: false
+            referencedRelation: "survey_responses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "action_plan_items_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
-      }
-      audit_groups: {
-        Row: {
-          created_at: string
-          created_by: string
-          description: string | null
-          id: string
-          lead_auditor_id: string
-          name: string
-          open_enrollment: boolean
-        }
-        Insert: {
-          created_at?: string
-          created_by: string
-          description?: string | null
-          id?: string
-          lead_auditor_id: string
-          name: string
-          open_enrollment?: boolean
-        }
-        Update: {
-          created_at?: string
-          created_by?: string
-          description?: string | null
-          id?: string
-          lead_auditor_id?: string
-          name?: string
-          open_enrollment?: boolean
-        }
-        Relationships: []
       }
       audit_logs: {
         Row: {
@@ -109,6 +189,79 @@ export type Database = {
         }
         Relationships: []
       }
+      audits: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          lead_auditor_id: string
+          name: string
+          open_enrollment: boolean
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          lead_auditor_id: string
+          name: string
+          open_enrollment?: boolean
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          lead_auditor_id?: string
+          name?: string
+          open_enrollment?: boolean
+        }
+        Relationships: []
+      }
+      audits_members: {
+        Row: {
+          added_at: string
+          group_id: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          added_at?: string
+          group_id: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          added_at?: string
+          group_id?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "audit_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "audits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "vw_audits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -134,8 +287,12 @@ export type Database = {
         Row: {
           answers: Json
           created_at: string
+          draft_answers: Json
+          draft_progress: number
+          draft_saved_at: string | null
           id: string
           progress: number
+          progress_saved_at: string | null
           submitted: boolean
           submitted_at: string | null
           survey_id: string
@@ -145,8 +302,12 @@ export type Database = {
         Insert: {
           answers?: Json
           created_at?: string
+          draft_answers?: Json
+          draft_progress?: number
+          draft_saved_at?: string | null
           id?: string
           progress?: number
+          progress_saved_at?: string | null
           submitted?: boolean
           submitted_at?: string | null
           survey_id: string
@@ -156,8 +317,12 @@ export type Database = {
         Update: {
           answers?: Json
           created_at?: string
+          draft_answers?: Json
+          draft_progress?: number
+          draft_saved_at?: string | null
           id?: string
           progress?: number
+          progress_saved_at?: string | null
           submitted?: boolean
           submitted_at?: string | null
           survey_id?: string
@@ -231,6 +396,20 @@ export type Database = {
             referencedRelation: "audit_groups"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "surveys_assigned_group_id_fkey"
+            columns: ["assigned_group_id"]
+            isOneToOne: false
+            referencedRelation: "audits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surveys_assigned_group_id_fkey"
+            columns: ["assigned_group_id"]
+            isOneToOne: false
+            referencedRelation: "vw_audits"
+            referencedColumns: ["id"]
+          },
         ]
       }
       user_roles: {
@@ -256,7 +435,195 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      audit_group_members: {
+        Row: {
+          added_at: string | null
+          group_id: string | null
+          id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          added_at?: string | null
+          group_id?: string | null
+          id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          added_at?: string | null
+          group_id?: string | null
+          id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "audit_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "audits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "vw_audits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      audit_groups: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          id: string | null
+          lead_auditor_id: string | null
+          name: string | null
+          open_enrollment: boolean | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          id?: string | null
+          lead_auditor_id?: string | null
+          name?: string | null
+          open_enrollment?: boolean | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          id?: string | null
+          lead_auditor_id?: string | null
+          name?: string | null
+          open_enrollment?: boolean | null
+        }
+        Relationships: []
+      }
+      audit_members: {
+        Row: {
+          added_at: string | null
+          group_id: string | null
+          id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          added_at?: string | null
+          group_id?: string | null
+          id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          added_at?: string | null
+          group_id?: string | null
+          id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "audit_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "audits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "vw_audits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vw_audits: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          id: string | null
+          lead_auditor_id: string | null
+          name: string | null
+          open_enrollment: boolean | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          id?: string | null
+          lead_auditor_id?: string | null
+          name?: string | null
+          open_enrollment?: boolean | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          id?: string | null
+          lead_auditor_id?: string | null
+          name?: string | null
+          open_enrollment?: boolean | null
+        }
+        Relationships: []
+      }
+      vw_audits_members: {
+        Row: {
+          added_at: string | null
+          group_id: string | null
+          id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          added_at?: string | null
+          group_id?: string | null
+          id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          added_at?: string | null
+          group_id?: string | null
+          id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "audit_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "audits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "vw_audits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       _actor_email: { Args: { _uid: string }; Returns: string }
@@ -267,6 +634,15 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_audit_lead: {
+        Args: { _audit_id: string; _user_id: string }
+        Returns: boolean
+      }
+      is_audit_member: {
+        Args: { _audit_id: string; _user_id: string }
+        Returns: boolean
+      }
+      is_audit_open_unclaimed: { Args: { _audit_id: string }; Returns: boolean }
       is_group_lead: {
         Args: { _group_id: string; _user_id: string }
         Returns: boolean
