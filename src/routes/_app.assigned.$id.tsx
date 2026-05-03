@@ -233,6 +233,8 @@ function FillSurvey() {
     return Math.round((completedCount / allQuestions.length) * 100);
   }, [allQuestions.length, completedCount]);
 
+  const canSubmit = allQuestions.length > 0 && completedCount === allQuestions.length;
+
   const completedFilterValues = useMemo(() => {
     const baseValues = ["Yes", "No", "N/A"];
 
@@ -532,19 +534,19 @@ function FillSurvey() {
     setSaving(true);
 
     if (opts.submit) {
-      const missing = allQuestions.filter((q) => {
-        if (!q.required) return false;
+      if (allQuestions.length === 0) {
+        setSaving(false);
+        return toast.error("This audit has no questions to submit.");
+      }
 
-        const value = getAnswerValue(answers, q.id);
-        const comment = getAnswerComment(answers, q.id);
-
-        return !value || !comment;
-      });
+      const missing = allQuestions.filter(
+        (q) => !isQuestionCompleted(answers, q.id)
+      );
 
       if (missing.length) {
         setSaving(false);
         return toast.error(
-          `${missing.length} required question(s) missing answer or comment`
+          `No puedes enviar todavía. Faltan ${missing.length} pregunta(s) por completar con respuesta y comentario.`
         );
       }
 
@@ -668,10 +670,25 @@ function FillSurvey() {
           {saving ? "Saving…" : "Save progress"}
         </Button>
 
-        <Button onClick={() => persist({ submit: true })} disabled={saving}>
+        <Button
+          onClick={() => persist({ submit: true })}
+          disabled={saving || !canSubmit}
+          title={
+            canSubmit
+              ? "Submit audit"
+              : "Completa todas las preguntas con respuesta y comentario para enviar"
+          }
+        >
           <CheckCircle2 className="h-4 w-4 mr-2" />
           {saving ? "Saving…" : "Submit audit"}
         </Button>
+
+        {!canSubmit && allQuestions.length > 0 && (
+          <div className="w-full text-right text-xs text-muted-foreground">
+            Para enviar, completa todas las preguntas con respuesta y comentario.
+            Faltan {pendingCount}.
+          </div>
+        )}
       </div>
     );
   };
@@ -1106,7 +1123,7 @@ function FillSurvey() {
                             rows={2}
                           />
 
-                          {!getAnswerComment(answers, q.id) && (
+                          {!isQuestionCompleted(answers, q.id) && (
                             <p className="text-xs text-muted-foreground">
                               Para completar esta pregunta, selecciona una
                               respuesta y agrega un comentario.
