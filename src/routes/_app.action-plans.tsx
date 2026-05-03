@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
@@ -196,6 +196,7 @@ function progressClass(progress: number) {
 
 function ActionPlansPage() {
   const { user, hasRole, loading: authLoading } = useAuth();
+  const location = useLocation();
 
   const [items, setItems] = useState<ActionPlanItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -208,6 +209,34 @@ function ActionPlansPage() {
 
   const isAdmin = hasRole("admin");
   const canView = isAdmin || hasRole("lead_auditor");
+
+  const selectedSurveyId = useMemo(() => {
+    const searchValue = location.search as unknown;
+
+    if (
+      searchValue &&
+      typeof searchValue === "object" &&
+      "surveyId" in searchValue
+    ) {
+      return String((searchValue as { surveyId?: string }).surveyId ?? "");
+    }
+
+    if (typeof window !== "undefined") {
+      return new URLSearchParams(window.location.search).get("surveyId") ?? "";
+    }
+
+    return "";
+  }, [location.search]);
+
+  const isSurveyDetailWindow = selectedSurveyId.length > 0;
+
+  const openSurveyActionPlans = (surveyId: string) => {
+    const url = `${window.location.origin}/action-plans?surveyId=${encodeURIComponent(
+      surveyId
+    )}`;
+
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
 
   const loadData = async () => {
     if (!user) return;
@@ -378,6 +407,10 @@ function ActionPlansPage() {
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
+      if (selectedSurveyId && item.survey_id !== selectedSurveyId) {
+        return false;
+      }
+
       const matchesStatus =
         statusFilter === "all" ? true : item.status === statusFilter;
 
@@ -405,7 +438,7 @@ function ActionPlansPage() {
 
       return haystack.includes(term);
     });
-  }, [items, search, statusFilter]);
+  }, [items, search, statusFilter, selectedSurveyId]);
 
   const groupedByAudit = useMemo<AuditGroup[]>(() => {
     const auditsMap = new Map<
@@ -526,13 +559,15 @@ function ActionPlansPage() {
   }, [filteredItems]);
 
   const stats = useMemo(() => {
-    const total = items.length;
-    const pending = items.filter((item) => item.status === "pending").length;
-    const inProgress = items.filter(
+    const source = selectedSurveyId ? filteredItems : items;
+
+    const total = source.length;
+    const pending = source.filter((item) => item.status === "pending").length;
+    const inProgress = source.filter(
       (item) => item.status === "in_progress"
     ).length;
-    const closed = items.filter((item) => item.status === "closed").length;
-    const cancelled = items.filter(
+    const closed = source.filter((item) => item.status === "closed").length;
+    const cancelled = source.filter(
       (item) => item.status === "cancelled"
     ).length;
 
@@ -543,7 +578,14 @@ function ActionPlansPage() {
       closed,
       cancelled,
     };
-  }, [items]);
+  }, [items, filteredItems, selectedSurveyId]);
+
+  const selectedSurveyTitle = useMemo(() => {
+    if (!selectedSurveyId) return "";
+
+    return items.find((item) => item.survey_id === selectedSurveyId)
+      ?.survey_title;
+  }, [items, selectedSurveyId]);
 
   const updateItem = (itemId: string, patch: Partial<ActionPlanItem>) => {
     setItems((current) =>
@@ -985,20 +1027,22 @@ function ActionPlansPage() {
           <div className="flex items-center gap-2">
             <ListTodo className="h-6 w-6 text-muted-foreground" />
             <h1 className="text-2xl font-semibold tracking-tight">
-              Action Plans
+              {isSurveyDetailWindow ? "Action Plans del Survey" : "Action Plans"}
             </h1>
           </div>
 
           <p className="mt-1 text-muted-foreground">
-            Gestiona los planes de acción generados desde los hallazgos de los
-            Surveys, agrupados por Audit y Survey.
+            {isSurveyDetailWindow
+              ? selectedSurveyTitle ||
+                "Detalle de los planes de acción del Survey seleccionado."
+              : "Gestiona los planes de acción generados desde los hallazgos de los Surveys, agrupados por Audit y Survey."}
           </p>
         </div>
 
         <Button variant="outline" asChild>
-          <Link to="/surveys">
+          <Link to={isSurveyDetailWindow ? "/action-plans" : "/surveys"}>
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to surveys
+            {isSurveyDetailWindow ? "Back to Action Plans" : "Back to surveys"}
           </Link>
         </Button>
       </div>
@@ -1241,18 +1285,28 @@ function ActionPlansPage() {
                           </Link>
                         </Button>
 
-                        <details className="w-full">
-                          <summary className="mt-3 cursor-pointer select-none rounded-md border bg-background px-3 py-2 text-center text-sm font-medium hover:bg-accent hover:text-accent-foreground">
-                            View action plans
-                          </summary>
-
-                          <div className="mt-4 space-y-4">
-                            {surveyGroup.items.map((item, index) =>
-                              renderActionPlanItem(item, index)
-                            )}
-                          </div>
-                        </details>
+                        {!isSurveyDetailWindow && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              openSurveyActionPlans(surveyGroup.surveyId)
+                            }
+                          >
+                            <ListTodo className="mr-2 h-4 w-4" />
+                            Action Plans
+                          </Button>
+                        )}
                       </div>
+
+                      {isSurveyDetailWindow && (
+                        <div className="mt-4 space-y-4">
+                          {surveyGroup.items.map((item, index) =>
+                            renderActionPlanItem(item, index)
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
