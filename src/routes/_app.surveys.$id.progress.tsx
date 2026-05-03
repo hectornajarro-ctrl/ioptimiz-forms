@@ -4,8 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import {
   ArrowLeft,
+  AlertTriangle,
   CheckCircle2,
   Clock,
+  ClipboardList,
   Download,
   Eye,
   FileImage,
@@ -17,10 +19,31 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
+interface AuditReference {
+  source_title?: string;
+  section?: string;
+  page?: string;
+  requirement?: string;
+  source_text?: string;
+}
+
+interface AuditRisk {
+  title?: string;
+  description?: string;
+  category?: string;
+  severity?: string;
+  likelihood?: string;
+  impact?: string;
+}
+
 interface Question {
   id: string;
   label?: string;
   required?: boolean;
+  reference?: AuditReference;
+  risk?: AuditRisk;
+  recommended_actions?: string[];
+  expected_evidence?: string[];
 }
 
 interface Section {
@@ -61,6 +84,20 @@ interface SurveyProgressRow {
   lead_auditor_id: string;
   pdf_path: string | null;
   schema: SurveySchema | null;
+}
+
+interface ActionPlanItem {
+  id: string;
+  auditorId: string;
+  auditorName: string;
+  auditorEmail: string;
+  sectionTitle: string;
+  questionLabel: string;
+  answer: ComplianceAnswer;
+  reference?: AuditReference;
+  risk?: AuditRisk;
+  recommendedActions: string[];
+  expectedEvidence: string[];
 }
 
 export const Route = createFileRoute("/_app/surveys/$id/progress")({
@@ -142,6 +179,40 @@ function answerBadgeClass(value?: string) {
   return "border-border bg-background text-muted-foreground";
 }
 
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => String(item ?? "").trim())
+    .filter(Boolean);
+}
+
+function buildReferenceText(reference?: AuditReference): string {
+  if (!reference) return "";
+
+  return [
+    reference.source_title,
+    reference.section,
+    reference.page ? `Página ${reference.page}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function fallbackActionsForFinding(question: Question): string[] {
+  const actions = asStringArray(question.recommended_actions);
+
+  if (actions.length > 0) return actions;
+
+  return [
+    "Analizar la causa raíz del incumplimiento identificado.",
+    "Definir responsable y fecha objetivo para la corrección.",
+    "Implementar acción correctiva documentada.",
+    "Recolectar evidencia que demuestre la corrección del hallazgo.",
+    "Validar la efectividad de la acción correctiva antes del cierre.",
+  ];
+}
+
 function SurveyProgress() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
@@ -161,6 +232,37 @@ function SurveyProgress() {
     () => getQuestionIds(survey?.schema),
     [survey?.schema]
   );
+
+  const actionPlan = useMemo<ActionPlanItem[]>(() => {
+    const items: ActionPlanItem[] = [];
+    const sections = survey?.schema?.sections ?? [];
+
+    members.forEach((member) => {
+      sections.forEach((section) => {
+        (section.questions ?? []).forEach((question) => {
+          const answer = member.answers[question.id];
+
+          if (answer?.value !== "No") return;
+
+          items.push({
+            id: `${member.id}-${question.id}`,
+            auditorId: member.id,
+            auditorName: member.full_name || member.email,
+            auditorEmail: member.email,
+            sectionTitle: section.title,
+            questionLabel: question.label || "Untitled question",
+            answer,
+            reference: question.reference,
+            risk: question.risk,
+            recommendedActions: fallbackActionsForFinding(question),
+            expectedEvidence: asStringArray(question.expected_evidence),
+          });
+        });
+      });
+    });
+
+    return items;
+  }, [members, survey?.schema?.sections]);
 
   const stats = useMemo(() => {
     const total = members.length;
@@ -229,9 +331,10 @@ function SurveyProgress() {
       answeredPct,
       findings,
       evidenceCount,
+      actionPlanItems: actionPlan.length,
       allDone: total > 0 && submitted === total,
     };
-  }, [members, questionIds]);
+  }, [members, questionIds, actionPlan.length]);
 
   const exportMember = async (memberId: string) => {
     setExportingId(memberId);
@@ -486,8 +589,8 @@ function SurveyProgress() {
 
         <p className="text-muted-foreground mt-1">
           {isAdmin
-            ? "Admin view of member auditor completion and collected audit evidence."
-            : "Live view of each member auditor's progress, answers, findings and evidence."}
+            ? "Admin view of member auditor completion, collected evidence and action plan."
+            : "Live view of each member auditor's progress, answers, findings, evidence and action plan."}
         </p>
 
         <p className="text-sm text-muted-foreground mt-2">
@@ -640,6 +743,240 @@ function SurveyProgress() {
                 }}
               />
             </div>
+          </div>
+
+          <div
+            className="rounded-lg border bg-card p-5 mb-6"
+            style={{ boxShadow: "var(--shadow-card)" }}
+          >
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <ClipboardList className="h-5 w-5 text-muted-foreground" />
+                  <h2 className="text-lg font-semibold tracking-tight">
+                    Plan de acción preliminar
+                  </h2>
+                </div>
+
+                <p className="text-sm text-muted-foreground mt-1">
+                  Se genera automáticamente con las respuestas marcadas como{" "}
+                  <span className="font-medium">No</span>. Cada elemento
+                  representa un hallazgo potencial que debe ser revisado,
+                  corregido y cerrado con evidencia.
+                </p>
+              </div>
+
+              <div className="rounded-full border bg-muted/30 px-3 py-1 text-sm text-muted-foreground">
+                {stats.actionPlanItems} acción(es)
+              </div>
+            </div>
+
+            {actionPlan.length === 0 ? (
+              <div className="rounded-md border border-dashed p-5 text-sm text-muted-foreground">
+                Todavía no hay hallazgos marcados como{" "}
+                <span className="font-medium">No</span>. El plan de acción se
+                irá creando conforme los auditores registren incumplimientos.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {actionPlan.map((item, index) => {
+                  const referenceText = buildReferenceText(item.reference);
+                  const hasComment = !!item.answer.comment?.trim();
+                  const hasEvidence = !!item.answer.evidence?.path;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="rounded-lg border bg-background p-4"
+                    >
+                      <div className="flex flex-wrap items-start gap-3">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-sm font-semibold text-destructive">
+                          {index + 1}
+                        </div>
+
+                        <div className="flex-1 min-w-64">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center gap-1 rounded-full border border-destructive/30 bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive">
+                              <AlertTriangle className="h-3 w-3" />
+                              Hallazgo
+                            </span>
+
+                            {item.risk?.severity && (
+                              <span className="rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">
+                                Severidad: {item.risk.severity}
+                              </span>
+                            )}
+
+                            {item.risk?.category && (
+                              <span className="rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">
+                                Categoría: {item.risk.category}
+                              </span>
+                            )}
+                          </div>
+
+                          <h3 className="mt-3 font-semibold tracking-tight">
+                            {item.questionLabel}
+                          </h3>
+
+                          <div className="mt-1 text-sm text-muted-foreground">
+                            <span className="font-medium">Sección: </span>
+                            {item.sectionTitle}
+                          </div>
+
+                          <div className="text-sm text-muted-foreground">
+                            <span className="font-medium">Reportado por: </span>
+                            {item.auditorName}
+                          </div>
+
+                          {referenceText && (
+                            <div className="mt-2 rounded-md border bg-muted/30 p-3 text-sm">
+                              <div className="font-medium">
+                                Referencia normativa
+                              </div>
+
+                              <div className="text-muted-foreground">
+                                {referenceText}
+                              </div>
+
+                              {item.reference?.requirement && (
+                                <div className="mt-1 text-muted-foreground">
+                                  {item.reference.requirement}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {item.risk && (
+                            <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
+                              <div className="font-medium">
+                                Riesgo asociado
+                              </div>
+
+                              {item.risk.title && (
+                                <div className="text-muted-foreground">
+                                  {item.risk.title}
+                                </div>
+                              )}
+
+                              {item.risk.description && (
+                                <p className="mt-1 text-muted-foreground">
+                                  {item.risk.description}
+                                </p>
+                              )}
+
+                              <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                                {item.risk.likelihood && (
+                                  <span className="rounded-full border px-2 py-0.5">
+                                    Probabilidad: {item.risk.likelihood}
+                                  </span>
+                                )}
+
+                                {item.risk.impact && (
+                                  <span className="rounded-full border px-2 py-0.5">
+                                    Impacto: {item.risk.impact}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {hasComment && (
+                            <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
+                              <div className="mb-1 flex items-center gap-1 font-medium">
+                                <MessageSquare className="h-4 w-4" />
+                                Comentario / detalle del hallazgo
+                              </div>
+
+                              <p className="text-muted-foreground whitespace-pre-wrap">
+                                {item.answer.comment}
+                              </p>
+                            </div>
+                          )}
+
+                          <div className="mt-3 grid gap-3 md:grid-cols-2">
+                            <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                              <div className="font-medium">
+                                Acciones recomendadas
+                              </div>
+
+                              <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+                                {item.recommendedActions.map(
+                                  (action, actionIndex) => (
+                                    <li key={actionIndex}>{action}</li>
+                                  )
+                                )}
+                              </ul>
+                            </div>
+
+                            <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                              <div className="font-medium">
+                                Evidencia esperada para cierre
+                              </div>
+
+                              {item.expectedEvidence.length > 0 ? (
+                                <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+                                  {item.expectedEvidence.map(
+                                    (evidence, evidenceIndex) => (
+                                      <li key={evidenceIndex}>{evidence}</li>
+                                    )
+                                  )}
+                                </ul>
+                              ) : (
+                                <p className="mt-2 text-muted-foreground">
+                                  Documento, registro, captura, fotografía o
+                                  validación que demuestre la corrección del
+                                  hallazgo.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          {hasEvidence && item.answer.evidence && (
+                            <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
+                              <div className="mb-2 flex items-center gap-1 font-medium">
+                                <FileImage className="h-4 w-4" />
+                                Evidencia adjunta por el auditor
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-3">
+                                <span className="text-muted-foreground">
+                                  {item.answer.evidence.name ||
+                                    item.answer.evidence.path.split("/").pop()}
+                                </span>
+
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    openEvidenceFile(item.answer.evidence!)
+                                  }
+                                  disabled={
+                                    openingEvidence ===
+                                    item.answer.evidence.path
+                                  }
+                                >
+                                  <Eye className="h-4 w-4 mr-1" />
+                                  {openingEvidence === item.answer.evidence.path
+                                    ? "Opening…"
+                                    : "Open evidence"}
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="mt-3 rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                            Estado sugerido:{" "}
+                            <span className="font-medium">
+                              Pendiente de análisis y asignación de responsable.
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="space-y-4">
