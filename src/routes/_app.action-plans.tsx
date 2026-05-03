@@ -1,8 +1,4 @@
-import {
-  createFileRoute,
-  Link,
-  useNavigate,
-} from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
@@ -256,9 +252,7 @@ function ActionPlansPage() {
             .eq("lead_auditor_id", user.id)
             .order("created_at", { ascending: false });
 
-      if (surveysError) {
-        throw surveysError;
-      }
+      if (surveysError) throw surveysError;
 
       const surveys = (surveysData ?? []) as SurveyLite[];
 
@@ -289,9 +283,7 @@ function ActionPlansPage() {
           .select("id,name")
           .in("id", auditIds);
 
-        if (auditsError) {
-          throw auditsError;
-        }
+        if (auditsError) throw auditsError;
 
         auditMap = new Map(
           ((auditsData ?? []) as AuditLite[]).map((audit) => [
@@ -307,9 +299,7 @@ function ActionPlansPage() {
         .in("survey_id", surveyIds)
         .order("created_at", { ascending: true });
 
-      if (actionPlanError) {
-        throw actionPlanError;
-      }
+      if (actionPlanError) throw actionPlanError;
 
       const rawItems = (actionPlanData ?? []) as any[];
 
@@ -329,9 +319,7 @@ function ActionPlansPage() {
           .select("id,full_name,email")
           .in("id", auditorIds);
 
-        if (auditorsError) {
-          throw auditorsError;
-        }
+        if (auditorsError) throw auditorsError;
 
         auditorMap = new Map(
           ((auditorsData ?? []) as AuditorLite[]).map((auditor) => [
@@ -396,9 +384,7 @@ function ActionPlansPage() {
 
   useEffect(() => {
     if (authLoading || !user || !canView) {
-      if (!authLoading) {
-        setLoading(false);
-      }
+      if (!authLoading) setLoading(false);
       return;
     }
 
@@ -632,10 +618,7 @@ function ActionPlansPage() {
     }
   };
 
-  const uploadClosureEvidence = async (
-    item: ActionPlanItem,
-    file: File
-  ) => {
+  const uploadClosureEvidence = async (item: ActionPlanItem, file: File) => {
     if (file.size > 10 * 1024 * 1024) {
       return toast.error("File too large (max 10 MB)");
     }
@@ -710,9 +693,9 @@ function ActionPlansPage() {
     const StatusIcon = statusIcon(item.status);
 
     return (
-      <div key={item.id} className="rounded-lg border bg-background p-4">
-        <div className="flex flex-wrap items-start gap-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-sm font-semibold text-destructive">
+      <div key={item.id} className="rounded-lg border bg-background p-5">
+        <div className="flex flex-wrap items-start gap-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-sm font-semibold text-destructive">
             {index + 1}
           </div>
 
@@ -745,7 +728,7 @@ function ActionPlansPage() {
               )}
             </div>
 
-            <h4 className="mt-3 font-semibold tracking-tight">
+            <h4 className="mt-3 text-lg font-semibold tracking-tight">
               {item.question_label}
             </h4>
 
@@ -764,7 +747,7 @@ function ActionPlansPage() {
             </div>
 
             {referenceText && (
-              <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
+              <div className="mt-4 rounded-md border bg-muted/30 p-3 text-sm">
                 <div className="font-medium">Referencia normativa</div>
 
                 <div className="text-muted-foreground">{referenceText}</div>
@@ -778,7 +761,7 @@ function ActionPlansPage() {
             )}
 
             {(item.risk?.title || item.risk?.description) && (
-              <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
+              <div className="mt-4 rounded-md border bg-muted/30 p-3 text-sm">
                 <div className="font-medium">Riesgo asociado</div>
 
                 {item.risk?.title && (
@@ -796,7 +779,7 @@ function ActionPlansPage() {
             )}
 
             {item.finding_comment && (
-              <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
+              <div className="mt-4 rounded-md border bg-muted/30 p-3 text-sm">
                 <div className="font-medium">Comentario del hallazgo</div>
                 <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
                   {item.finding_comment}
@@ -804,7 +787,7 @@ function ActionPlansPage() {
               </div>
             )}
 
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
               <div className="rounded-md border bg-muted/30 p-3 text-sm">
                 <div className="font-medium">Acciones recomendadas</div>
 
@@ -839,7 +822,7 @@ function ActionPlansPage() {
               </div>
             </div>
 
-            <div className="mt-4 rounded-md border p-4">
+            <div className="mt-5 rounded-md border p-4">
               <div className="mb-3 font-medium">Completar action plan</div>
 
               <div className="grid gap-4 md:grid-cols-2">
@@ -1207,47 +1190,67 @@ function ActionPlansPage() {
                 </div>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {auditGroup.surveys.map((surveyGroup) => (
-                  <div
-                    key={surveyGroup.surveyId}
-                    className="flex min-h-[280px] flex-col rounded-lg border bg-card p-5"
-                    style={{ boxShadow: "var(--shadow-card)" }}
-                  >
-                    <div className="mb-3 flex items-start justify-between gap-3">
-                      <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
+              {isSurveyDetailWindow ? (
+                <div className="space-y-6">
+                  {auditGroup.surveys.map((surveyGroup) => (
+                    <div
+                      key={surveyGroup.surveyId}
+                      className="rounded-lg border bg-card p-6"
+                      style={{ boxShadow: "var(--shadow-card)" }}
+                    >
+                      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-5 w-5 text-muted-foreground" />
+                            <h3 className="text-xl font-semibold tracking-tight">
+                              {surveyGroup.surveyTitle}
+                            </h3>
+                          </div>
 
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-sm ${
-                          surveyGroup.progressPercent === 100
-                            ? "bg-success/15 text-success"
-                            : "bg-warning/15 text-warning-foreground"
-                        }`}
-                      >
-                        {surveyGroup.progressPercent === 100 ? (
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                        ) : (
-                          <Clock className="h-3.5 w-3.5" />
-                        )}
-                        {surveyGroup.progressPercent}% cerrado
-                      </span>
-                    </div>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {surveyGroup.totalItems} action plan(s) generados por
+                            hallazgos del survey.
+                          </p>
+                        </div>
 
-                    <h3 className="line-clamp-2 text-lg font-semibold tracking-tight">
-                      {surveyGroup.surveyTitle}
-                    </h3>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-sm ${
+                              surveyGroup.progressPercent === 100
+                                ? "bg-success/15 text-success"
+                                : "bg-warning/15 text-warning-foreground"
+                            }`}
+                          >
+                            {surveyGroup.progressPercent === 100 ? (
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                            ) : (
+                              <Clock className="h-3.5 w-3.5" />
+                            )}
+                            {surveyGroup.progressPercent}% cerrado
+                          </span>
 
-                    <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
-                      {surveyGroup.totalItems} action plan(s) generados por
-                      hallazgos del survey.
-                    </p>
+                          <Button variant="outline" size="sm" asChild>
+                            <Link
+                              to="/surveys/$id/progress"
+                              params={{ id: surveyGroup.surveyId }}
+                            >
+                              <Eye className="mr-2 h-4 w-4" />
+                              View progress
+                            </Link>
+                          </Button>
+                        </div>
+                      </div>
 
-                    <div className="mt-auto pt-4">
-                      <div className="mb-4 space-y-2">
+                      <div className="mb-5 space-y-2">
                         <div className="flex items-center justify-between text-sm text-muted-foreground">
-                          <span>Cerrados</span>
                           <span>
-                            {surveyGroup.closedItems} / {surveyGroup.totalItems}
+                            Cerrados: {surveyGroup.closedItems} /{" "}
+                            {surveyGroup.totalItems}
+                          </span>
+                          <span>
+                            Pendientes: {surveyGroup.pendingItems} · En progreso:{" "}
+                            {surveyGroup.inProgressItems} · Cancelados:{" "}
+                            {surveyGroup.cancelledItems}
                           </span>
                         </div>
 
@@ -1261,32 +1264,97 @@ function ActionPlansPage() {
                             }}
                           />
                         </div>
-
-                        <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
-                          <div className="rounded-md border bg-muted/30 px-2 py-1 text-center">
-                            Pend. {surveyGroup.pendingItems}
-                          </div>
-                          <div className="rounded-md border bg-muted/30 px-2 py-1 text-center">
-                            Prog. {surveyGroup.inProgressItems}
-                          </div>
-                          <div className="rounded-md border bg-muted/30 px-2 py-1 text-center">
-                            Canc. {surveyGroup.cancelledItems}
-                          </div>
-                        </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <Button variant="outline" size="sm" asChild>
-                          <Link
-                            to="/surveys/$id/progress"
-                            params={{ id: surveyGroup.surveyId }}
-                          >
-                            <Eye className="mr-2 h-4 w-4" />
-                            View progress
-                          </Link>
-                        </Button>
+                      <div className="space-y-5">
+                        {surveyGroup.items.map((item, index) =>
+                          renderActionPlanItem(item, index)
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {auditGroup.surveys.map((surveyGroup) => (
+                    <div
+                      key={surveyGroup.surveyId}
+                      className="flex min-h-[280px] flex-col rounded-lg border bg-card p-5"
+                      style={{ boxShadow: "var(--shadow-card)" }}
+                    >
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
 
-                        {!isSurveyDetailWindow && (
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-sm ${
+                            surveyGroup.progressPercent === 100
+                              ? "bg-success/15 text-success"
+                              : "bg-warning/15 text-warning-foreground"
+                          }`}
+                        >
+                          {surveyGroup.progressPercent === 100 ? (
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          ) : (
+                            <Clock className="h-3.5 w-3.5" />
+                          )}
+                          {surveyGroup.progressPercent}% cerrado
+                        </span>
+                      </div>
+
+                      <h3 className="line-clamp-2 text-lg font-semibold tracking-tight">
+                        {surveyGroup.surveyTitle}
+                      </h3>
+
+                      <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+                        {surveyGroup.totalItems} action plan(s) generados por
+                        hallazgos del survey.
+                      </p>
+
+                      <div className="mt-auto pt-4">
+                        <div className="mb-4 space-y-2">
+                          <div className="flex items-center justify-between text-sm text-muted-foreground">
+                            <span>Cerrados</span>
+                            <span>
+                              {surveyGroup.closedItems} /{" "}
+                              {surveyGroup.totalItems}
+                            </span>
+                          </div>
+
+                          <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                            <div
+                              className={`h-full ${progressClass(
+                                surveyGroup.progressPercent
+                              )}`}
+                              style={{
+                                width: `${surveyGroup.progressPercent}%`,
+                              }}
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+                            <div className="rounded-md border bg-muted/30 px-2 py-1 text-center">
+                              Pend. {surveyGroup.pendingItems}
+                            </div>
+                            <div className="rounded-md border bg-muted/30 px-2 py-1 text-center">
+                              Prog. {surveyGroup.inProgressItems}
+                            </div>
+                            <div className="rounded-md border bg-muted/30 px-2 py-1 text-center">
+                              Canc. {surveyGroup.cancelledItems}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <Button variant="outline" size="sm" asChild>
+                            <Link
+                              to="/surveys/$id/progress"
+                              params={{ id: surveyGroup.surveyId }}
+                            >
+                              <Eye className="mr-2 h-4 w-4" />
+                              View progress
+                            </Link>
+                          </Button>
+
                           <Button
                             type="button"
                             variant="outline"
@@ -1298,20 +1366,12 @@ function ActionPlansPage() {
                             <ListTodo className="mr-2 h-4 w-4" />
                             Action Plans
                           </Button>
-                        )}
-                      </div>
-
-                      {isSurveyDetailWindow && (
-                        <div className="mt-4 space-y-4">
-                          {surveyGroup.items.map((item, index) =>
-                            renderActionPlanItem(item, index)
-                          )}
                         </div>
-                      )}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
