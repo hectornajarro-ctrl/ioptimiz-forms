@@ -41,6 +41,7 @@ interface AuditReference {
   page?: string;
   requirement?: string;
   source_text?: string;
+  [key: string]: unknown;
 }
 
 interface AuditRisk {
@@ -50,6 +51,7 @@ interface AuditRisk {
   severity?: string;
   likelihood?: string;
   impact?: string;
+  [key: string]: unknown;
 }
 
 interface SurveyLite {
@@ -306,7 +308,7 @@ function ActionPlansPage() {
         if (auditsError) throw auditsError;
 
         auditMap = new Map(
-          ((auditsData ?? []) as AuditLite[]).map((audit) => [
+          ((auditsData ?? []) as unknown as AuditLite[]).map((audit) => [
             audit.id,
             audit,
           ])
